@@ -7,6 +7,8 @@ import type {
 } from "@/game/types/cinematic-event";
 import type { EventDrivenScenario } from "@/game/types/scenario";
 import { clamp } from "@/game/utils/clamp";
+import { easeInOutQuad } from "@/game/utils/easing";
+import { lerp } from "@/game/utils/lerp";
 
 interface SetupInput {
   scenario: EventDrivenScenario;
@@ -317,8 +319,8 @@ function sampleKeyframedPosition(input: {
     1
   );
   return {
-    worldMain: lerp(posA.worldMain, posB.worldMain, t),
-    worldCross: lerp(posA.worldCross, posB.worldCross, t),
+    worldMain: lerp(posA.worldMain, posB.worldMain, easeInOutQuad(t)),
+    worldCross: lerp(posA.worldCross, posB.worldCross, easeInOutQuad(t)),
   };
 }
 
@@ -349,7 +351,7 @@ function sampleNumberKeyframes(
     return a.value;
   }
   const t = clamp((localMs - a.atMs) / Math.max(1, b.atMs - a.atMs), 0, 1);
-  return lerp(a.value, b.value, t);
+  return lerp(a.value, b.value, easeInOutQuad(t));
 }
 
 function findPrevKeyframe<T>(
@@ -377,10 +379,6 @@ function findNextKeyframe<T>(
     }
   }
   return null;
-}
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
 }
 
 function mergeEffects(

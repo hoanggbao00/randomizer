@@ -13,6 +13,14 @@ import type {
   TimelineKeyframe,
 } from "@/game/types/timeline";
 import { clamp } from "@/game/utils/clamp";
+import {
+  buildRacerMoveSteps,
+  buildSpriteMoveSteps,
+  makeRacerPositionStep,
+  makeRacerVelocityStep,
+  makeSpriteStep,
+  mergeStepArrays,
+} from "./cinematic-event-authoring";
 import { planEvents } from "./event-planner";
 import { SeededRng } from "./seeded-rng";
 import {
@@ -354,35 +362,31 @@ function buildTestCinematic(input: {
     input.durationMs * 0.7
   );
   const policeDurationMs = 1600;
+  const policeLocalDuration = policeDurationMs;
 
-  prefabs.push({
-    prefabId: "TEST_POLICE_PULL",
-    name: "Police Pull (test)",
-    steps: [
-      // Spawn near target, slightly behind.
-      {
-        atMs: 0,
-        eventSprite: {
-          position: {
-            kind: "RACER",
-            racerId: policeTarget.id,
-            dMain: -180,
-            dCross: 0,
-          },
-          opacity: 1,
-        },
-      },
-      // Approach and stop behind racer.
+  const policeSpriteSteps = buildSpriteMoveSteps({
+    startMs: 0,
+    durationMs: policeLocalDuration,
+    from: {
+      kind: "RACER",
+      racerId: policeTarget.id,
+      dMain: -180,
+      dCross: 0,
+    },
+    to: {
+      kind: "RACER",
+      racerId: policeTarget.id,
+      dMain: -50,
+      dCross: 0,
+    },
+    fromOpacity: 1,
+    toOpacity: 0,
+  });
+
+  const policeRacerSteps = mergeStepArrays(
+    [
       {
         atMs: 500,
-        eventSprite: {
-          position: {
-            kind: "RACER",
-            racerId: policeTarget.id,
-            dMain: -50,
-            dCross: 0,
-          },
-        },
         racers: [
           {
             racerId: policeTarget.id,
@@ -391,54 +395,44 @@ function buildTestCinematic(input: {
           },
         ],
       },
-      // Pull racer into the car (drag backward + fade).
-      {
-        atMs: 900,
-        racers: [
-          {
-            racerId: policeTarget.id,
-            velocityMultiplier: 0,
-            animState: "lose",
-            position: {
-              target: {
-                kind: "RACER",
-                racerId: policeTarget.id,
-                dMain: 0,
-                dCross: 0,
-              },
-              opacity: 0.35,
-            },
-          },
-        ],
+    ],
+    buildRacerMoveSteps({
+      racerId: policeTarget.id,
+      startMs: 900,
+      durationMs: 300,
+      from: {
+        kind: "RACER",
+        racerId: policeTarget.id,
+        dMain: 0,
+        dCross: 0,
       },
-      // Fade out completely, then remove racer.
-      {
-        atMs: 1200,
-        racers: [
-          {
-            racerId: policeTarget.id,
-            velocityMultiplier: 0,
-            animState: "lose",
-            position: {
-              target: {
-                kind: "RACER",
-                racerId: policeTarget.id,
-                dMain: 0,
-                dCross: 0,
-              },
-              opacity: 0,
-            },
-          },
-        ],
+      to: {
+        kind: "RACER",
+        racerId: policeTarget.id,
+        dMain: 0,
+        dCross: 0,
       },
+      fromOpacity: 0.35,
+      toOpacity: 0,
+    }),
+    [
       {
         atMs: 1350,
         racers: [
-          { racerId: policeTarget.id, isDestroyed: true, animState: "lose" },
+          {
+            racerId: policeTarget.id,
+            isDestroyed: true,
+            animState: "lose",
+          },
         ],
-        eventSprite: { opacity: 0 },
       },
-    ],
+    ]
+  );
+
+  prefabs.push({
+    prefabId: "TEST_POLICE_PULL",
+    name: "Police Pull (test)",
+    steps: mergeStepArrays(policeSpriteSteps, policeRacerSteps),
   });
 
   instances.push({
@@ -460,76 +454,67 @@ function buildTestCinematic(input: {
     );
     const ufoDurationMs = 1400;
 
+    const ufoSteps = mergeStepArrays(
+      [
+        // UFO hovers above target
+        makeSpriteStep({
+          atMs: 0,
+          target: {
+            kind: "RACER",
+            racerId: ufoTarget.id,
+            dMain: 0,
+            dCross: -80,
+          },
+          opacity: 1,
+        }),
+        // Beam down and freeze racer
+        makeRacerVelocityStep({
+          atMs: 500,
+          racerId: ufoTarget.id,
+          velocityMultiplier: 0,
+          animState: "idle",
+        }),
+        // Lift racer upward and fade slightly
+        makeRacerPositionStep({
+          atMs: 900,
+          racerId: ufoTarget.id,
+          target: {
+            kind: "RACER",
+            racerId: ufoTarget.id,
+            dMain: 0,
+            dCross: -60,
+          },
+          opacity: 0.5,
+          animState: "lose",
+          velocityMultiplier: 0,
+        }),
+        // Drop racer back onto track and let them continue running
+        makeRacerPositionStep({
+          atMs: 1300,
+          racerId: ufoTarget.id,
+          target: {
+            kind: "RACER",
+            racerId: ufoTarget.id,
+            dMain: -20,
+            dCross: 0,
+          },
+          opacity: 1,
+          animState: "running",
+          velocityMultiplier: 1,
+        }),
+      ],
+      [
+        {
+          atMs: 1300,
+          eventSprite: { opacity: 0 },
+        },
+      ]
+    );
+
     prefabs.push({
       prefabId: "TEST_UFO_LIFT",
       name: "UFO Lift (test)",
-      steps: [
-        // UFO hovers above target
-        {
-          atMs: 0,
-          eventSprite: {
-            position: {
-              kind: "RACER",
-              racerId: ufoTarget.id,
-              dMain: 0,
-              dCross: -80,
-            },
-            opacity: 1,
-          },
-        },
-        // Beam down and freeze racer
-        {
-          atMs: 500,
-          racers: [
-            {
-              racerId: ufoTarget.id,
-              velocityMultiplier: 0,
-              animState: "idle",
-            },
-          ],
-        },
-        // Lift racer upward and fade slightly
-        {
-          atMs: 900,
-          racers: [
-            {
-              racerId: ufoTarget.id,
-              velocityMultiplier: 0,
-              animState: "lose",
-              position: {
-                target: {
-                  kind: "RACER",
-                  racerId: ufoTarget.id,
-                  dMain: 0,
-                  dCross: -60,
-                },
-                opacity: 0.5,
-              },
-            },
-          ],
-        },
-        // Drop racer back onto track and let them continue running
-        {
-          atMs: 1300,
-          racers: [
-            {
-              racerId: ufoTarget.id,
-              velocityMultiplier: 1,
-              animState: "running",
-              position: {
-                target: {
-                  kind: "RACER",
-                  racerId: ufoTarget.id,
-                  dMain: -20,
-                  dCross: 0,
-                },
-                opacity: 1,
-              },
-            },
-          ],
-          eventSprite: { opacity: 0 },
-        },
-      ],
+      steps: ufoSteps,
     });
 
     instances.push({
