@@ -16,6 +16,7 @@ export default defineConfig({
     tailwindcss(),
     AutoImport({
       imports: ["react"],
+      dirs: ["./src/lib/index.ts"],
       biomelintrc: {
         enabled: true,
       },

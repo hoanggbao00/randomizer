@@ -1,575 +1,1066 @@
 # Tech Lead Blueprint: Fun Racing Randomizer Game
 
+> **Revision 2** — Updated for kebab-case filenames, Biome/Ultracite linting, entity-first Zustand stores, unified simulation↔render coordinate system, and community-defined event types.
+
+---
+
 ## 1) Product Goal
 
 Xây game đua xe vui nhộn chạy client-side với React 19 + TypeScript + Zustand + PixiJS.
 
 Luồng cốt lõi:
 1. Nhập danh sách racer từ textarea, mỗi dòng một tên.
-2. Precompute toàn bộ kịch bản race trước khi chạy gồm winner, speed curve, random events.
+2. Precompute toàn bộ kịch bản race trước khi chạy — winner, speed curve, random events.
 3. Playback race theo timeline để người xem cảm giác ngẫu nhiên nhưng hợp lý.
 4. Kết thúc race trả kết quả winner chắc chắn đúng theo kịch bản.
 
+---
+
 ## 2) Runtime Constraints
 
-- Max 30 racers.
-- Không scroll track theo chiều dọc dù đông racer.
-- Track length theo viewport, min 500px.
-- Hỗ trợ 4 hướng đua: left-to-right, right-to-left, top-to-bottom, bottom-to-top.
-- Có background image riêng và basic audio.
-- Camera track leader, tự clamp gần vùng đích để không vượt viewport end.
-- Minimap là tính năng mở rộng tùy chọn.
+| Constraint | Value |
+|---|---|
+| Max racers | 30 |
+| Scroll | Không scroll, chia đều lane trong viewport |
+| Track length | max of viewport main-axis and 500px |
+| Directions | LTR, RTL, TTB, BTT |
+| Background | Custom image per race config |
+| Audio | Basic BGM + SFX |
+| Camera | Track leader, clamp near finish |
+| Minimap | Optional future feature |
+| Target FPS | 60 |
+| Min race duration | 10s, configurable longer |
+| Seed reproducible | Yes |
 
-## 3) High-Level Architecture
+---
+
+## 3) Existing Project Stack
+
+Đã có sẵn trong repo:
+
+| Tool | Version/Config |
+|---|---|
+| Vite | 7.3.1 via rolldown-vite |
+| React | 19.2.0 |
+| TypeScript | 5.9.3 |
+| Biome | 2.4.5 via Ultracite |
+| Tailwind CSS | 4.2.1 |
+| shadcn/ui | base-mira style |
+| unplugin-auto-import | React hooks auto-imported |
+| babel-plugin-react-compiler | enabled |
+| Path aliases | `@/*` → `./src/*`, `@@/*` → `./*` |
+
+Cần thêm:
+- `zustand` — state management
+- `pixi.js` — 2D rendering
+- `zod` — schema validation cho community uploads
+- `howler` — optional audio helper
+
+---
+
+## 4) High-Level Architecture
 
 ```mermaid
 flowchart TD
-  UI[React UI Layer] --> Store[Zustand Store]
-  UI --> Orchestrator[Race Orchestrator]
-  Orchestrator --> Simulator[Race Simulator]
-  Orchestrator --> AssetMgr[Asset Manager]
-  Orchestrator --> PixiRuntime[Pixi Runtime]
+  UI[React UI Layer] --> ConfigStore[Config Store]
+  UI --> RacerStore[Racer Store]
+  UI --> Bridge[Game Bridge]
+  Bridge --> Runtime[Game Runtime]
+  Runtime --> Simulator[Race Simulator]
+  Runtime --> AssetMgr[Asset Manager]
+  Runtime --> PixiApp[Pixi Application]
   Simulator --> Timeline[Precomputed Timeline]
-  Timeline --> Playback[Playback Engine]
+  Runtime --> Playback[Playback Engine]
   Playback --> EventSys[Event System]
   Playback --> Camera[Camera Controller]
   Playback --> Anim[Animation Controller]
+  Playback --> PlaybackStore[Playback Store]
+  Camera --> CameraStore[Camera Store]
   AssetMgr --> SpriteRegistry[Sprite Registry]
   AssetMgr --> AudioRegistry[Audio Registry]
+  EventSys --> EventRegistry[Event Type Registry]
 ```
 
-## 4) Lifecycle Contract
+---
+
+## 5) Lifecycle Contract
 
 ```ts
-export interface GameLifecycle {
+interface GameLifecycle {
   init(): Promise<void>
   loadAssets(): Promise<void>
   startRace(input: StartRaceInput): Promise<void>
   update(deltaMs: number): void
   render(): void
   onRaceEnd(result: RaceResult): void
+  destroy(): void
 }
 ```
 
 Execution order:
-1. init
-2. loadAssets
-3. startRace
-4. update loop at ticker
-5. render by Pixi scene graph
-6. onRaceEnd callback and state finalize
+1. `init` — create Pixi app, subscribe stores, setup resize observer
+2. `loadAssets` — preload base + community sprite packs and audio
+3. `startRace` — parse racers → simulate scenario → push to stores → start ticker
+4. `update` loop — playback engine tick, animation controller tick, camera tick
+5. `render` — Pixi scene graph auto-renders, explicit hook for debug overlay
+6. `onRaceEnd` — dispatch winner, stop BGM, play finish SFX
+7. `destroy` — cleanup Pixi app, unsubscribe stores, release textures
 
-## 5) Folder Structure
+---
+
+## 6) Folder Structure — kebab-case
 
 ```text
 src/
-  app/
-    App.tsx
-    providers/
-      GameProvider.tsx
   game/
     core/
-      GameRuntime.ts
-      RaceOrchestrator.ts
-      GameClock.ts
+      game-runtime.ts          # GameLifecycle implementation
+      race-orchestrator.ts     # Coordinates simulation → playback flow
+      game-clock.ts            # High-res timer wrapper
     simulation/
-      RaceSimulator.ts
-      SpeedCurve.ts
-      EventPlanner.ts
-      SeededRng.ts
+      race-simulator.ts        # Precompute full scenario
+      speed-curve.ts           # Noise-based speed generation
+      event-planner.ts         # Plan random events into timeline
+      seeded-rng.ts            # Deterministic PRNG with seed
     playback/
-      PlaybackEngine.ts
-      RaceTimeline.ts
-      RaceMath.ts
+      playback-engine.ts       # Interpolate keyframes at runtime
+      race-timeline.ts         # Timeline data structure + queries
+      race-math.ts             # Interpolation helpers
     rendering/
-      PixiApp.ts
-      SceneRoot.ts
-      TrackRenderer.ts
-      RacerRenderer.ts
-      NameLabelRenderer.ts
-      CameraController.ts
-      MinimapRenderer.ts
+      pixi-app.ts              # Pixi Application wrapper
+      scene-root.ts            # Root container + layer ordering
+      track-renderer.ts        # Background + finish line
+      racer-renderer.ts        # Sprite container per racer
+      name-label-renderer.ts   # Text label positioned ahead of racer
+      camera-controller.ts     # Leader tracking + finish clamp
+      minimap-renderer.ts      # Optional minimap overlay
     animation/
-      AnimationController.ts
-      AnimationStateMachine.ts
+      animation-controller.ts  # Manages AnimatedSprite per racer
+      animation-state-machine.ts # State transitions with guards
     assets/
-      AssetManager.ts
-      AssetValidator.ts
-      AssetFallback.ts
-      SpriteSheetFactory.ts
-      CommunityAssetSchema.ts
+      asset-manager.ts         # Load, cache, resolve assets
+      asset-validator.ts       # Validate community uploads
+      asset-fallback.ts        # Fallback sprite/placeholder
+      spritesheet-factory.ts   # Build AnimatedSprite from profile
+      community-asset-schema.ts # Zod schema for upload manifest
     audio/
-      AudioManager.ts
-      SfxBus.ts
-    state/
-      raceStore.ts
-      slices/
-        configSlice.ts
-        racersSlice.ts
-        timelineSlice.ts
-        playbackSlice.ts
-        cameraSlice.ts
+      audio-manager.ts         # BGM + SFX lifecycle
+      sfx-bus.ts               # Debounced SFX dispatcher
+    events/
+      event-registry.ts        # Built-in + community event type registry
+      event-types.ts           # Event type definitions
+      community-event-schema.ts # Zod schema for community event uploads
+      event-effect-resolver.ts # Resolve event type → runtime effect
     types/
-      race.ts
-      asset.ts
-      event.ts
-      camera.ts
-      animation.ts
+      race.ts                  # RaceConfig, RaceDirection, RaceResult
+      racer.ts                 # RacerInput, RacerRuntimeState, RacerAnimState
+      event.ts                 # RaceEvent, RaceEventType, EventEffect
+      timeline.ts              # TimelineKeyframe, RacerTimeline, PrecomputedScenario
+      asset.ts                 # AssetManifest, RacerVisualProfile, SpriteAnimationDef
+      camera.ts                # CameraState, CameraConfig
+      animation.ts             # AnimationBinding types
+      coordinate.ts            # WorldCoord, unified coordinate types
+    stores/
+      config-store.ts          # Race configuration state
+      racer-store.ts           # Racer entity state
+      scenario-store.ts        # Precomputed scenario state
+      playback-store.ts        # Playback phase + elapsed time
+      camera-store.ts          # Camera position + mode
+      ui-store.ts              # UI form state, errors, warnings
     utils/
       clamp.ts
       lerp.ts
       easing.ts
-      objectPool.ts
+      object-pool.ts
       perf.ts
+      coordinate-utils.ts      # World ↔ screen conversion
+    hooks/
+      use-game-bridge.ts       # React hook to mount/unmount game
+      use-race-controls.ts     # Start/pause/reset actions
+  components/
+    race-input-form.tsx        # Textarea + config controls
+    race-canvas.tsx            # Canvas host div for Pixi
+    race-controls.tsx          # Play/pause/reset buttons
+    race-result.tsx            # Winner display
+    ui/                        # shadcn components already here
 ```
 
-## 6) Core TypeScript Types
+---
+
+## 7) Core TypeScript Types
+
+### 7.1 Unified Coordinate System
+
+Simulation và render dùng chung một hệ tọa độ world. Không có conversion layer riêng giữa simulation progress và render position.
 
 ```ts
-export type RaceDirection = 'LTR' | 'RTL' | 'TTB' | 'BTT'
+// types/coordinate.ts
 
-export interface RaceConfig {
+/** World position in pixels, origin at track start */
+interface WorldCoord {
+  /** Position along race axis: 0 = start, trackLength = finish */
+  main: number
+  /** Position along cross axis: lane position */
+  cross: number
+}
+
+/** Maps WorldCoord to screen pixel based on direction */
+type DirectionMapper = {
+  toScreen: (world: WorldCoord) => { x: number; y: number }
+  toWorld: (screen: { x: number; y: number }) => WorldCoord
+}
+```
+
+### 7.2 Race Types
+
+```ts
+// types/race.ts
+
+type RaceDirection = 'LTR' | 'RTL' | 'TTB' | 'BTT'
+
+interface RaceConfig {
   seed: string
   minDurationMs: number
   targetDurationMs: number
   trackLengthPx: number
   direction: RaceDirection
-  eventDensity: number
+  eventDensity: number       // 0-1, controls how many events per racer
   allowElimination: boolean
   maxRacers: number
+  backgroundImage?: string
 }
 
-export interface RacerInput {
+interface RaceResult {
+  winnerRacerId: string
+  rankings: Array<{ racerId: string; rank: number; finishMs: number }>
+  seed: string
+  durationMs: number
+}
+```
+
+### 7.3 Racer Types
+
+```ts
+// types/racer.ts
+
+interface RacerInput {
   id: string
   name: string
   assetId?: string
 }
 
-export type RacerAnimState = 'idle' | 'running' | 'boost' | 'stunned' | 'lose' | 'win' | 'eliminated'
+type CoreRacerAnimState = 'idle' | 'running' | 'lose' | 'win'
 
-export interface RacerRuntimeState {
+/**
+ * Animation state is extensible.
+ * - Core states are fixed and always supported.
+ * - Community can provide additional arbitrary states via spritesheet manifest.
+ */
+type RacerAnimState = CoreRacerAnimState | (string & {})
+
+interface RacerRuntimeState {
   racerId: string
   laneIndex: number
-  progress01: number
+  /** World position along main axis: 0 → trackLength */
+  worldMain: number
+  /** World position along cross axis: lane center */
+  worldCross: number
   speedPxPerSec: number
   accelPxPerSec2: number
   isEliminated: boolean
+  isFinished: boolean
   animState: RacerAnimState
-  worldX: number
-  worldY: number
+  activeEventIds: string[]
+}
+```
+
+### 7.4 Event Types — extensible via registry
+
+```ts
+// types/event.ts
+
+/** Built-in event type IDs */
+type BuiltinEventTypeId = 'BOOST' | 'SLOW' | 'STUN' | 'ELIMINATE'
+
+/** Community event type IDs are prefixed */
+type CommunityEventTypeId = `community:${string}`
+
+type RaceEventTypeId = BuiltinEventTypeId | CommunityEventTypeId
+
+interface EventTypeDefinition {
+  typeId: RaceEventTypeId
+  displayName: string
+  description: string
+  icon?: string
+  /** Effect applied to racer during event */
+  effect: EventEffect
+  /** Animation state override during event, null = keep current */
+  animStateOverride: RacerAnimState | null
+  /** Priority for stacking resolution: higher wins */
+  priority: number
+  /** Can this event stack with same type? */
+  selfStackable: boolean
+  /** SFX key to play on trigger */
+  sfxKey?: string
+  /** Visual particle effect key */
+  vfxKey?: string
 }
 
-export type RaceEventType = 'BOOST' | 'SLOW' | 'STUN' | 'ELIMINATE'
+interface EventEffect {
+  speedMultiplier: number    // 1.0 = no change, 1.5 = 50% faster
+  accelDelta: number         // added to acceleration
+  progressLock: boolean      // true = freeze progress, used by ELIMINATE
+}
 
-export interface RaceEvent {
+interface RaceEvent {
   id: string
-  type: RaceEventType
+  typeId: RaceEventTypeId
   racerId: string
   startMs: number
   durationMs: number
-  magnitude: number
+  magnitude: number          // scales the effect intensity
 }
+```
 
-export interface TimelineKeyframe {
+### 7.5 Timeline Types
+
+```ts
+// types/timeline.ts
+
+interface TimelineKeyframe {
   tMs: number
-  progress01: number
+  worldMain: number          // absolute world position, not 0-1
   speedPxPerSec: number
-  activeEvents: string[]
+  animState: RacerAnimState
+  activeEventIds: string[]
 }
 
-export interface RacerTimeline {
+interface RacerTimeline {
   racerId: string
   keyframes: TimelineKeyframe[]
   finalRank: number
-  finishMs: number
+  finishMs: number           // Infinity if eliminated before finish
 }
 
-export interface PrecomputedScenario {
+interface PrecomputedScenario {
   seed: string
   winnerRacerId: string
   durationMs: number
+  trackLengthPx: number
+  direction: RaceDirection
   events: RaceEvent[]
+  eventTypes: Record<RaceEventTypeId, EventTypeDefinition>
   racerTimelines: Record<string, RacerTimeline>
+  rankings: Array<{ racerId: string; rank: number; finishMs: number }>
 }
 ```
 
-## 7) Zustand State Model
+### 7.6 Asset Types
 
 ```ts
-export interface RaceStore {
-  config: RaceConfig
-  racers: RacerInput[]
-  scenario: PrecomputedScenario | null
+// types/asset.ts
 
-  playback: {
-    phase: 'IDLE' | 'LOADING' | 'READY' | 'PLAYING' | 'PAUSED' | 'ENDED'
-    elapsedMs: number
-    timeScale: number
-    winnerRacerId: string | null
-  }
-
-  camera: {
-    worldX: number
-    worldY: number
-    zoom: number
-    mode: 'LEADER_TRACK' | 'LOCKED_BY_MINIMAP'
-    clampAtFinish: boolean
-    focusRacerId: string | null
-  }
-
-  ui: {
-    textareaInput: string
-    errors: string[]
-    warnings: string[]
-  }
-
-  actions: {
-    setConfig(patch: Partial<RaceConfig>): void
-    setRacersFromTextarea(raw: string): void
-    setScenario(s: PrecomputedScenario): void
-    startPlayback(): void
-    pausePlayback(): void
-    tick(deltaMs: number): void
-    setCameraMode(mode: 'LEADER_TRACK' | 'LOCKED_BY_MINIMAP'): void
-    lockCameraToRacer(racerId: string | null): void
-    endRace(winnerRacerId: string): void
-    resetRace(): void
-  }
-}
-```
-
-Store recommendations:
-- Slices pattern cho config, racers, scenario, playback, camera.
-- subscribeWithSelector để đồng bộ side-effect nặng như audio trigger, analytics.
-- useShallow cho selector ghép object để giảm rerender UI.
-
-## 8) Precompute Algorithm: winner guaranteed + duration guaranteed
-
-### 8.1 Input
-- racer list
-- config duration
-- seed
-
-### 8.2 Steps
-1. Parse racer list, trim empty, dedupe id.
-2. Random chọn winner bằng seeded RNG.
-3. Sinh finishTime cho từng racer:
-   - Winner tại targetDurationMs.
-   - Racer còn lại lớn hơn winner bằng offset random có giới hạn.
-   - Nếu allowElimination thì một phần racer có finishMs là Infinity.
-4. Chia timeline thành N segments, ví dụ 40-80 segment tùy duration.
-5. Sinh base speed curve cho mỗi racer bằng noise mượt.
-6. Inject event plan vào segment hợp lệ:
-   - BOOST tăng speed tạm thời.
-   - SLOW giảm speed.
-   - STUN đặt speed thấp gần 0.
-   - ELIMINATE khóa progress ở current.
-7. Solve normalization:
-   - Tính tích phân speed để ra progress.
-   - Scale từng curve để match đúng finishTime đã định.
-8. Post-process smoothing bằng cubic easing hoặc Hermite spline.
-9. Build keyframe timeline cố định bước thời gian, ví dụ 100ms.
-10. Validate invariants:
-   - Winner về first.
-   - Không racer vượt finish trước winner nếu không phải winner.
-   - Tổng duration >= minDurationMs.
-
-### 8.3 Formula suggestion
-- progress:
-  - p t+dt = clamp p t + v t * dt / trackLength
-- speed blending:
-  - v = baseV * eventMultiplier * fatigueFactor
-- natural interpolation:
-  - vSmooth = lerp vPrev vTarget alpha
-  - alpha = 1 - exp negative k * dt
-
-## 9) Event System Model
-
-```ts
-export interface EventEffect {
-  speedMultiplier: number
-  accelDelta: number
-  forcedAnimState?: RacerAnimState
-  canStack: boolean
-}
-
-export interface EventSystem {
-  planEvents(input: {
-    racers: RacerInput[]
-    config: RaceConfig
-    winnerRacerId: string
-    rng: SeededRng
-  }): RaceEvent[]
-
-  applyEvents(atMs: number, racerState: RacerRuntimeState, events: RaceEvent[]): RacerRuntimeState
-}
-```
-
-Event stacking rules:
-- BOOST và SLOW có thể stack capped.
-- STUN override movement ưu tiên cao hơn BOOST.
-- ELIMINATE chuyển state terminal, disable mọi event khác sau timestamp.
-
-## 10) Animation Controller
-
-```ts
-export interface SpriteAnimationDef {
+interface SpriteAnimationDef {
   state: RacerAnimState
-  frames: string[]
+  frames: string[]           // frame names in atlas
   fps: number
   loop: boolean
 }
 
-export interface RacerVisualProfile {
+interface RacerVisualProfile {
   profileId: string
-  sharedAtlasId?: string
+  sharedAtlasId?: string     // multiple racers can share one atlas
+  atlasImage: string         // URL or path
+  atlasData: string          // URL or path to JSON
   animations: SpriteAnimationDef[]
   anchor: { x: number; y: number }
   scale: number
 }
 
-export interface AnimationController {
-  bindRacer(racerId: string, profile: RacerVisualProfile): void
-  setState(racerId: string, state: RacerAnimState): void
-  update(deltaMs: number): void
+interface AssetManifest {
+  manifestVersion: number
+  assetId: string
+  displayName: string
+  author: string
+  atlasImage: string
+  atlasData: string
+  animations: Record<string, {
+    frames: string[]
+    fps: number
+    loop: boolean
+  }>
+  defaultScale: number
+  anchor: { x: number; y: number }
 }
 ```
 
-State mapping gợi ý:
-- idle khi READY
-- running khi PLAYING bình thường
-- boost khi active BOOST
-- stunned khi active STUN
-- win cho winner tại finish
-- lose cho phần còn lại ở end
-- eliminated khi ELIMINATE
+---
 
-## 11) Camera Controller + 4 directions + finish clamp
+## 8) Zustand Stores — Entity-First Architecture
+
+Mỗi entity/concern có store riêng biệt. Không dùng slices pattern gộp vào 1 store lớn.
+
+### 8.1 Config Store
 
 ```ts
-export interface CameraState {
-  x: number
-  y: number
+// stores/config-store.ts
+
+interface ConfigState {
+  config: RaceConfig
+  setConfig: (patch: Partial<RaceConfig>) => void
+  resetConfig: () => void
+}
+
+const DEFAULT_CONFIG: RaceConfig = {
+  seed: '',
+  minDurationMs: 10_000,
+  targetDurationMs: 15_000,
+  trackLengthPx: 0,          // computed from viewport
+  direction: 'LTR',
+  eventDensity: 0.5,
+  allowElimination: false,
+  maxRacers: 30,
+}
+
+// create<ConfigState>()(...)
+```
+
+### 8.2 Racer Store
+
+```ts
+// stores/racer-store.ts
+
+interface RacerState {
+  inputs: RacerInput[]
+  runtimeStates: Record<string, RacerRuntimeState>
+  setInputsFromTextarea: (raw: string) => void
+  setRuntimeState: (racerId: string, state: Partial<RacerRuntimeState>) => void
+  batchUpdateRuntime: (updates: Record<string, Partial<RacerRuntimeState>>) => void
+  reset: () => void
+}
+```
+
+`batchUpdateRuntime` là key method — playback engine gọi mỗi frame để đồng bộ tọa độ world cho tất cả racer cùng lúc, tránh N lần set riêng lẻ.
+
+### 8.3 Scenario Store
+
+```ts
+// stores/scenario-store.ts
+
+interface ScenarioState {
+  scenario: PrecomputedScenario | null
+  setScenario: (s: PrecomputedScenario) => void
+  clearScenario: () => void
+}
+```
+
+### 8.4 Playback Store
+
+```ts
+// stores/playback-store.ts
+
+type PlaybackPhase = 'IDLE' | 'LOADING' | 'READY' | 'COUNTDOWN' | 'PLAYING' | 'PAUSED' | 'ENDED'
+
+interface PlaybackState {
+  phase: PlaybackPhase
+  elapsedMs: number
+  timeScale: number
+  winnerRacerId: string | null
+  setPhase: (phase: PlaybackPhase) => void
+  tick: (deltaMs: number) => void
+  setTimeScale: (scale: number) => void
+  setWinner: (racerId: string) => void
+  reset: () => void
+}
+```
+
+### 8.5 Camera Store
+
+```ts
+// stores/camera-store.ts
+
+type CameraMode = 'LEADER_TRACK' | 'LOCKED_BY_MINIMAP' | 'FREE'
+
+interface CameraState {
+  worldMain: number
+  worldCross: number
   zoom: number
-  mode: 'LEADER_TRACK' | 'LOCKED_BY_MINIMAP'
-}
-
-export interface CameraConfig {
-  viewportWidth: number
-  viewportHeight: number
-  finishWorldCoord: number
-  lookAheadPx: number
-  clampMarginPx: number
+  mode: CameraMode
+  focusRacerId: string | null
+  setPosition: (main: number, cross: number) => void
+  setMode: (mode: CameraMode) => void
+  setFocusRacer: (racerId: string | null) => void
+  reset: () => void
 }
 ```
 
-Leader tracking logic:
-1. Tìm racer progress cao nhất chưa eliminate.
-2. Set target camera theo trục chính direction.
-3. Áp dụng smoothing.
-4. Clamp target để camera không vượt finish edge trừ margin.
-5. Nếu mode LOCKED_BY_MINIMAP thì lấy focus từ minimap drag.
-
-## 12) Renderer Rules
-
-- Mỗi racer có container gồm body sprite + name label.
-- Name label đặt phía trước racer theo trục đua:
-  - LTR label ở bên phải
-  - RTL label ở bên trái
-  - TTB label ở dưới
-  - BTT label ở trên
-- Track length:
-  - max viewportMainAxis và 500.
-- Lane spacing:
-  - viewportCrossAxis chia đều theo số racer.
-- Có thể overlap, không cần tránh đè nhau theo yêu cầu.
-
-## 13) Community Asset Upload Contract
-
-### 13.1 Upload manifest
-
-```json
-{
-  "manifestVersion": 1,
-  "assetId": "dragon_01",
-  "displayName": "Dragon Racer",
-  "author": "community_user",
-  "atlasImage": "dragon.png",
-  "atlasData": "dragon.json",
-  "animations": {
-    "idle": { "frames": ["idle_0", "idle_1"], "fps": 6, "loop": true },
-    "running": { "frames": ["run_0", "run_1", "run_2"], "fps": 12, "loop": true },
-    "boost": { "frames": ["boost_0", "boost_1"], "fps": 16, "loop": true },
-    "stunned": { "frames": ["stun_0", "stun_1"], "fps": 8, "loop": true },
-    "win": { "frames": ["win_0", "win_1"], "fps": 10, "loop": false },
-    "lose": { "frames": ["lose_0", "lose_1"], "fps": 10, "loop": false },
-    "eliminated": { "frames": ["ko_0"], "fps": 1, "loop": false }
-  },
-  "defaultScale": 1,
-  "anchor": { "x": 0.5, "y": 0.5 }
-}
-```
-
-### 13.2 Validation pipeline
-1. JSON schema validate required fields.
-2. Verify atlas image and json loadable.
-3. Verify all frames in manifest tồn tại trong atlas.
-4. Verify all required animation states đủ.
-5. Check fps range hợp lệ ví dụ 1-60.
-6. Check texture size budget để tránh asset quá nặng.
-
-### 13.3 Fallback strategy
-- Nếu profile lỗi hoàn toàn dùng default built-in racer profile.
-- Nếu thiếu 1 animation state, fallback sang running hoặc idle.
-- Nếu atlas fail load, gán placeholder sprite màu.
-- Log warning vào store.ui.warnings để hiển thị non-blocking.
-
-## 14) Audio System
-
-Basic channels:
-- BGM race loop.
-- SFX boost slow stun eliminate finish.
-
-Rules:
-- Preload audio ở loadAssets.
-- Debounce spam SFX cùng loại trong cửa sổ ngắn.
-- Mute on tab hidden nếu muốn tiết kiệm tài nguyên.
-
-## 15) React to Pixi binding
+### 8.6 UI Store
 
 ```ts
-export interface GameBridge {
-  mount(canvasHost: HTMLDivElement): Promise<void>
-  unmount(): void
-  startRaceFromInput(rawNames: string): Promise<void>
-  resize(width: number, height: number): void
+// stores/ui-store.ts
+
+interface UIState {
+  textareaInput: string
+  errors: string[]
+  warnings: string[]
+  setTextarea: (value: string) => void
+  addError: (msg: string) => void
+  addWarning: (msg: string) => void
+  clearMessages: () => void
 }
 ```
 
-Recommended flow:
-- React quản lý form và control buttons.
-- Pixi runtime giữ scene objects, ticker, textures.
-- Zustand là single source of truth cho race state.
-- Bridge subscribe store và apply delta ra Pixi.
+### 8.7 Store Coordination Pattern
 
-## 16) Skeleton Code Snippets
+Stores không import lẫn nhau. Coordination xảy ra ở:
+- `race-orchestrator.ts` — đọc config store + racer store → gọi simulator → ghi scenario store + playback store.
+- `playback-engine.ts` — đọc scenario store → tính frame → ghi racer store `batchUpdateRuntime` + camera store.
+- React components — subscribe từng store riêng, dùng `useShallow` khi cần nhiều field.
+- Side effects — `subscribeWithSelector` trên playback store để trigger audio events.
 
-### 16.1 GameRuntime
+```mermaid
+flowchart LR
+  Orchestrator -->|reads| ConfigStore
+  Orchestrator -->|reads| RacerStore
+  Orchestrator -->|writes| ScenarioStore
+  Orchestrator -->|writes| PlaybackStore
+  PlaybackEngine -->|reads| ScenarioStore
+  PlaybackEngine -->|writes| RacerStore
+  PlaybackEngine -->|writes| CameraStore
+  PlaybackEngine -->|writes| PlaybackStore
+  ReactUI -->|reads| All[All Stores]
+  ReactUI -->|writes| ConfigStore
+  ReactUI -->|writes| UIStore
+  AudioSub[Audio Subscriber] -->|subscribes| PlaybackStore
+```
+
+---
+
+## 9) Precompute Algorithm
+
+### 9.1 Input
+- `RacerInput[]` from racer store
+- `RaceConfig` from config store
+
+### 9.2 Steps
+
+1. **Parse & validate** — trim empty lines, generate unique IDs, cap at maxRacers.
+2. **Seed RNG** — initialize `SeededRng` from `config.seed`.
+3. **Pick winner** — uniform random from racer list.
+4. **Assign finish times**:
+   - Winner finishes at `targetDurationMs`.
+   - Others finish at `targetDurationMs + rng.range(500, 3000)`.
+   - If `allowElimination`, ~10-20% racers get `finishMs = Infinity`.
+5. **Compute track length** — `max(viewportMainAxis, 500)`.
+6. **Build base speed curves** — for each racer:
+   - Target average speed = `trackLengthPx / finishMs * 1000`.
+   - Generate smooth noise curve with 40-80 control points.
+   - Perturb each point by `±30%` of average speed.
+7. **Plan events** — `EventPlanner` distributes events:
+   - Total events = `racerCount * eventDensity * rng.range(2, 5)`.
+   - Avoid events in first 1s and last 1s.
+   - Winner gets fewer negative events.
+   - Eliminated racers get ELIMINATE event at random time after 40% progress.
+8. **Solve normalization** — iterative:
+   - Integrate speed curve → cumulative distance.
+   - Scale entire curve so total distance = trackLengthPx at finishMs.
+   - Re-integrate and verify.
+   - Max 3 iterations, tolerance 1px.
+9. **Smooth** — Hermite spline interpolation between control points.
+10. **Build keyframes** — sample at fixed 50ms intervals:
+    - `worldMain` = cumulative distance at t.
+    - `speedPxPerSec` = instantaneous speed.
+    - `animState` = derived from active events.
+    - `activeEventIds` = events overlapping t.
+11. **Validate invariants**:
+    - Winner `worldMain` reaches `trackLengthPx` first.
+    - No non-winner reaches finish before winner.
+    - Duration >= `minDurationMs`.
+    - All keyframes have monotonically increasing `worldMain` except STUN/ELIMINATE.
+
+### 9.3 Speed Interpolation Formula
+
+```
+// Exponential smoothing for natural feel
+vSmooth(t) = vSmooth(t-1) + (1 - e^(-k * dt)) * (vTarget(t) - vSmooth(t-1))
+
+// Event-modified speed
+vEffective = vSmooth * productOf(activeEvent.effect.speedMultiplier * event.magnitude)
+
+// World position update during precompute
+worldMain(t+dt) = worldMain(t) + vEffective * dt / 1000
+
+// Clamp
+worldMain = clamp(worldMain, 0, trackLengthPx)
+```
+
+---
+
+## 10) Event System — Extensible Registry
+
+### 10.1 Built-in Event Types
+
+| typeId | speedMultiplier | accelDelta | progressLock | default animStateOverride | priority | selfStackable |
+|---|---|---|---|---|---|---|
+| BOOST | 1.5 | 0 | false | null by default, can map to custom state like turbo | 10 | true, capped 2x |
+| SLOW | 0.6 | 0 | false | null by default | 10 | true, capped 2x |
+| STUN | 0.05 | 0 | false | null by default, can map to custom state like dizzy | 20 | false |
+| ELIMINATE | 0 | 0 | true | lose fallback if no custom eliminated-like state | 100 | false |
+
+### 10.2 Community Event Upload Schema
 
 ```ts
-export class GameRuntime implements GameLifecycle {
-  private lastTs = 0
+// events/community-event-schema.ts — validated with Zod
 
-  async init(): Promise<void> {
-    // init pixi app, store listeners, resize hooks
-  }
-
-  async loadAssets(): Promise<void> {
-    // preload base assets and selected community packs
-  }
-
-  async startRace(input: StartRaceInput): Promise<void> {
-    // parse racers -> simulate scenario -> push to store -> start playback
-  }
-
-  update(deltaMs: number): void {
-    // playbackEngine.update
-    // animationController.update
-    // cameraController.update
-  }
-
-  render(): void {
-    // Pixi handles render, keep explicit for architecture clarity
-  }
-
-  onRaceEnd(result: RaceResult): void {
-    // dispatch winner, stop race bgm, play finish sfx
-  }
-}
+const communityEventSchema = z.object({
+  typeId: z.string().regex(/^community:.+$/),
+  displayName: z.string().min(1).max(50),
+  description: z.string().max(200),
+  icon: z.string().optional(),
+  effect: z.object({
+    speedMultiplier: z.number().min(0).max(5),
+    accelDelta: z.number().min(-500).max(500),
+    progressLock: z.boolean(),
+  }),
+  // Can point to any state key from racer spritesheet, including core states
+  animStateOverride: z.string().min(1).max(50).nullable(),
+  priority: z.number().int().min(1).max(50),
+  selfStackable: z.boolean(),
+  sfxKey: z.string().optional(),
+  vfxKey: z.string().optional(),
+})
 ```
 
-### 16.2 RaceSimulator
+### 10.3 Event Registry
 
 ```ts
-export class RaceSimulator {
-  generateScenario(input: {
-    racers: RacerInput[]
-    config: RaceConfig
-  }): PrecomputedScenario {
-    // seeded rng
-    // pick winner
-    // build finish times
-    // plan events
-    // solve curves
-    // build keyframes
-    // validate
-    return {} as PrecomputedScenario
+// events/event-registry.ts
+
+class EventRegistry {
+  private types = new Map<RaceEventTypeId, EventTypeDefinition>()
+
+  constructor() {
+    // Register built-in types
+    this.register(BOOST_DEF)
+    this.register(SLOW_DEF)
+    this.register(STUN_DEF)
+    this.register(ELIMINATE_DEF)
   }
+
+  register(def: EventTypeDefinition): void { ... }
+  get(typeId: RaceEventTypeId): EventTypeDefinition | undefined { ... }
+  getAll(): EventTypeDefinition[] { ... }
+
+  /** Load and validate community event definitions */
+  loadCommunityEvents(defs: unknown[]): {
+    loaded: EventTypeDefinition[]
+    errors: string[]
+  } { ... }
 }
 ```
 
-### 16.3 PlaybackEngine
+### 10.4 Stacking Resolution
+
+Khi nhiều event active cùng lúc trên 1 racer:
+1. Sort by priority descending.
+2. Nếu highest priority event có `progressLock = true` → lock, ignore rest.
+3. Nếu highest priority event có `animStateOverride` → use it.
+4. Multiply all `speedMultiplier` values, capped at `[0.05, 3.0]`.
+5. Sum all `accelDelta` values, capped at `[-200, 200]`.
+
+---
+
+## 11) Animation Controller
 
 ```ts
-export class PlaybackEngine {
-  update(atMs: number, scenario: PrecomputedScenario): PlaybackFrame {
-    // interpolate each racer keyframe
-    // apply active events
-    // produce renderable frame
-    return {} as PlaybackFrame
+// animation/animation-controller.ts
+
+interface AnimationBinding {
+  racerId: string
+  profile: RacerVisualProfile
+  currentState: RacerAnimState
+  sprite: AnimatedSprite       // PixiJS AnimatedSprite
+}
+
+/**
+ * State fallback chain:
+ * 1. requested state
+ * 2. running
+ * 3. idle
+ */
+
+class AnimationController {
+  private bindings = new Map<string, AnimationBinding>()
+
+  /** Create AnimatedSprite and bind to racer */
+  bindRacer(racerId: string, profile: RacerVisualProfile): AnimatedSprite { ... }
+
+  /** Transition to new animation state if different */
+  setState(racerId: string, newState: RacerAnimState): void {
+    // Guard: skip if same state
+    // Resolve animation by state key from manifest
+    // If missing, fallback running -> idle
+    // Swap textures array on AnimatedSprite
+    // Set animationSpeed from profile fps
+    // Play or gotoAndStop based on loop
+  }
+
+  /** Called each frame — AnimatedSprite.update is automatic via ticker */
+  update(deltaMs: number): void { ... }
+
+  /** Cleanup */
+  unbindAll(): void { ... }
+}
+```
+
+---
+
+## 12) Camera Controller
+
+```ts
+// rendering/camera-controller.ts
+
+class CameraController {
+  private config: CameraConfig
+  private smoothedMain = 0
+
+  update(
+    racerStates: Record<string, RacerRuntimeState>,
+    cameraStore: CameraState,
+    deltaMs: number
+  ): { worldMain: number; worldCross: number } {
+    if (cameraStore.mode === 'LEADER_TRACK') {
+      // 1. Find leader = racer with max worldMain, not eliminated
+      // 2. Target = leader.worldMain + lookAheadPx
+      // 3. Clamp target so camera edge does not exceed finish + margin
+      // 4. Smooth: smoothedMain += (target - smoothedMain) * (1 - e^(-6 * dt))
+      // 5. Cross axis = viewport center
+    }
+    if (cameraStore.mode === 'LOCKED_BY_MINIMAP') {
+      // Use focusRacerId position
+    }
+    return { worldMain: this.smoothedMain, worldCross: ... }
   }
 }
 ```
 
-## 17) Performance Strategy for 60fps
+### Finish Clamp Logic
 
-- Reuse Pixi containers và text objects, tránh create destroy liên tục.
-- Object pool cho event particles và transient effects.
-- Hạn chế realloc arrays trong update loop.
-- Fixed timestep simulation precompute, playback interpolation nhẹ.
-- Dùng spritesheet atlas để giảm texture binds.
-- Cache background và static track layer.
-- Tách UI React rerender khỏi ticker 60fps.
-- Chỉ sync store fields cần thiết cho React, phần realtime nằm trong runtime refs.
-- Pause ticker hoặc giảm workload khi tab unfocus.
+```
+maxCameraMain = trackLengthPx - viewportMainAxis + clampMarginPx
+targetMain = min(leaderWorldMain + lookAhead, maxCameraMain)
+```
 
-## 18) Edge Case Checklist
+Khi camera đạt `maxCameraMain`, nó dừng lại và racer chạy vào vùng finish trong viewport.
 
-1. Chỉ 1 racer.
-2. 2 racers tên trùng.
-3. 30 racers với lane spacing dày và overlap.
-4. Empty lines trong textarea.
-5. Race duration nhỏ hơn min 10 giây phải auto clamp.
-6. Resize liên tục trong lúc race.
-7. Direction switch giữa các race liên tiếp.
-8. Asset community thiếu frame running.
-9. Asset json parse lỗi.
-10. Atlas image tải chậm hoặc fail.
-11. Tab unfocus rồi refocus.
-12. Eliminate xảy ra với racer đang dẫn đầu.
-13. Event chồng nhau boost + stun.
-14. Winner bị stun cuối race nhưng vẫn phải thắng hợp lý theo timeline.
-15. Seed giống nhau cho ra kết quả giống nhau.
+---
 
-## 19) Suggested Implementation Phases
+## 13) Renderer — Unified Coordinates
 
-Phase A
-- Core store + input parser + seeded simulator + basic renderer rectangles.
+### 13.1 Direction Mapper
 
-Phase B
-- Sprite animations per racer + event visual effects + audio.
+```ts
+// utils/coordinate-utils.ts
 
-Phase C
-- Community asset upload + validation + fallback.
+function createDirectionMapper(
+  direction: RaceDirection,
+  viewportWidth: number,
+  viewportHeight: number,
+  trackLengthPx: number
+): DirectionMapper {
+  switch (direction) {
+    case 'LTR':
+      return {
+        toScreen: (w) => ({ x: w.main, y: w.cross }),
+        toWorld: (s) => ({ main: s.x, cross: s.y }),
+      }
+    case 'RTL':
+      return {
+        toScreen: (w) => ({ x: trackLengthPx - w.main, y: w.cross }),
+        toWorld: (s) => ({ main: trackLengthPx - s.x, cross: s.y }),
+      }
+    case 'TTB':
+      return {
+        toScreen: (w) => ({ x: w.cross, y: w.main }),
+        toWorld: (s) => ({ main: s.y, cross: s.x }),
+      }
+    case 'BTT':
+      return {
+        toScreen: (w) => ({ x: w.cross, y: trackLengthPx - w.main }),
+        toWorld: (s) => ({ main: trackLengthPx - s.y, cross: s.x }),
+      }
+  }
+}
+```
 
-Phase D
-- Minimap interaction lock camera + polish + QA.
+### 13.2 Racer Rendering
 
-## 20) Required Dependencies to add
+- Mỗi racer = `Container` chứa `AnimatedSprite` + `Text` label.
+- Position set trực tiếp từ `RacerRuntimeState.worldMain` và `worldCross` qua `DirectionMapper.toScreen`.
+- Camera offset applied ở scene root container level, không per-racer.
 
-- zustand
-- pixi.js
-- optional: howler for audio helper
-- optional: zod for upload schema validation
+### 13.3 Name Label Placement
 
-This blueprint is implementation-ready for coding in next mode.
+Label đặt phía trước racer theo hướng đua:
+- LTR: label `x = sprite.width/2 + 8` (bên phải sprite)
+- RTL: label `x = -sprite.width/2 - 8` (bên trái sprite)
+- TTB: label `y = sprite.height/2 + 8` (bên dưới sprite)
+- BTT: label `y = -sprite.height/2 - 8` (bên trên sprite)
+
+### 13.4 Lane Layout
+
+```
+laneSpacing = viewportCrossAxis / racerCount
+racer[i].worldCross = laneSpacing * (i + 0.5)
+```
+
+Overlap chấp nhận được khi nhiều racer.
+
+---
+
+## 14) Community Asset Upload Contract
+
+### 14.1 Spritesheet Manifest — Zod validated
+
+```ts
+// assets/community-asset-schema.ts
+
+const assetManifestSchema = z.object({
+  manifestVersion: z.literal(1),
+  assetId: z.string().regex(/^[a-z0-9_-]+$/),
+  displayName: z.string().min(1).max(100),
+  author: z.string().min(1).max(100),
+  atlasImage: z.string(),
+  atlasData: z.string(),
+  animations: z.record(
+    z.enum(['idle', 'running', 'boost', 'stunned', 'win', 'lose', 'eliminated']),
+    z.object({
+      frames: z.array(z.string()).min(1),
+      fps: z.number().int().min(1).max(60),
+      loop: z.boolean(),
+    })
+  ).refine(
+    (anims) => 'idle' in anims && 'running' in anims,
+    'Must include at least idle and running animations'
+  ),
+  defaultScale: z.number().min(0.1).max(5),
+  anchor: z.object({
+    x: z.number().min(0).max(1),
+    y: z.number().min(0).max(1),
+  }),
+})
+```
+
+### 14.2 Validation Pipeline
+
+1. Parse JSON → validate against `assetManifestSchema`.
+2. Attempt to load atlas image — check dimensions ≤ 2048x2048.
+3. Parse atlas JSON — verify PixiJS spritesheet format.
+4. Cross-reference: every frame name in manifest exists in atlas.
+5. Check total texture memory budget: ≤ 4MB per asset.
+6. Return `{ valid: true, profile: RacerVisualProfile }` or `{ valid: false, errors: string[] }`.
+
+### 14.3 Fallback Strategy
+
+| Failure | Fallback |
+|---|---|
+| Entire manifest invalid | Use built-in default racer profile |
+| Missing animation state X | Use `running` frames for X, or `idle` if running also missing |
+| Atlas image fails to load | Render colored rectangle placeholder |
+| Atlas JSON parse error | Use built-in default racer profile |
+| Frame name not found in atlas | Skip frame, use remaining frames |
+| All frames missing for a state | Fallback to `idle` or `running` |
+
+All fallbacks log to `ui-store.warnings` for non-blocking display.
+
+---
+
+## 15) Audio System
+
+### 15.1 Channels
+
+| Channel | Type | Behavior |
+|---|---|---|
+| BGM | Music loop | Play during race, stop on end |
+| SFX | One-shot | Triggered by events |
+
+### 15.2 SFX Mapping
+
+| Trigger | SFX Key |
+|---|---|
+| Race start countdown | `sfx-countdown` |
+| Race go | `sfx-go` |
+| BOOST event | `sfx-boost` |
+| SLOW event | `sfx-slow` |
+| STUN event | `sfx-stun` |
+| ELIMINATE event | `sfx-eliminate` |
+| Racer finishes | `sfx-finish` |
+| Winner declared | `sfx-winner` |
+
+### 15.3 Rules
+
+- Preload all audio in `loadAssets`.
+- Debounce same SFX key within 100ms window.
+- Mute BGM + SFX when `document.hidden === true`.
+- Community events can reference custom `sfxKey` — loaded via asset manager.
+
+---
+
+## 16) React ↔ Pixi Bridge
+
+```ts
+// hooks/use-game-bridge.ts
+
+function useGameBridge() {
+  const runtimeRef = useRef<GameRuntime | null>(null)
+
+  const mount = useCallback(async (host: HTMLDivElement) => {
+    const runtime = new GameRuntime()
+    await runtime.init()
+    // Append Pixi canvas to host
+    await runtime.loadAssets()
+    runtimeRef.current = runtime
+  }, [])
+
+  const unmount = useCallback(() => {
+    runtimeRef.current?.destroy()
+    runtimeRef.current = null
+  }, [])
+
+  const startRace = useCallback(async () => {
+    // Read from config store + racer store
+    // Call runtime.startRace(...)
+  }, [])
+
+  return { mount, unmount, startRace, runtimeRef }
+}
+```
+
+### Data Flow
+
+```
+User types names → UIStore.textarea
+User clicks Start → RaceOrchestrator reads ConfigStore + RacerStore
+                  → RaceSimulator.generateScenario()
+                  → ScenarioStore.setScenario()
+                  → PlaybackStore.setPhase PLAYING
+                  → Ticker starts
+                  → Each frame: PlaybackEngine reads ScenarioStore
+                               → computes positions
+                               → RacerStore.batchUpdateRuntime()
+                               → CameraStore.setPosition()
+                               → AnimationController.setState() per racer
+                  → Pixi reads RacerStore positions → renders
+                  → When winner crosses finish → PlaybackStore.setPhase ENDED
+                                               → onRaceEnd()
+```
+
+---
+
+## 17) Performance Strategy
+
+| Technique | Where | Why |
+|---|---|---|
+| Precomputed timeline | Simulation | Zero computation during playback, just interpolation |
+| Fixed 50ms keyframe interval | Timeline | Predictable memory, fast binary search lookup |
+| `batchUpdateRuntime` | Racer store | Single state update per frame instead of N |
+| Object pool | Particle effects | Avoid GC pressure from transient objects |
+| Spritesheet atlas | Assets | Minimize texture binds, batch rendering |
+| `cacheAsTexture` | Static layers | Background + track cached as single texture |
+| Ticker pause on hidden | Game clock | Save CPU when tab not visible |
+| `useShallow` selectors | React components | Prevent unnecessary rerenders |
+| Refs for hot path data | Playback engine | Avoid store subscription overhead in 60fps loop |
+| Avoid spread in loops | Utils | Prevent O of n-squared allocation patterns |
+
+### Hot Path Architecture
+
+Playback engine runs in Pixi ticker callback. It does NOT read from Zustand stores synchronously each frame. Instead:
+1. Scenario data is captured as a ref at race start.
+2. Elapsed time is tracked internally.
+3. Only the output — racer positions and camera — is written to stores.
+4. Pixi scene objects read from stores via `subscribeWithSelector` outside React.
+
+---
+
+## 18) Seed Reproducibility
+
+- `SeededRng` uses xoshiro128** algorithm — fast, good distribution, seedable.
+- Same seed + same racer list + same config = identical scenario.
+- Seed stored in `PrecomputedScenario` for replay/debug.
+- UI can show seed and allow manual seed input.
+
+---
+
+## 19) Edge Case Test Checklist
+
+| # | Case | Expected |
+|---|---|---|
+| 1 | 1 racer | Runs alone, wins by default |
+| 2 | 2 racers same name | Both render, unique IDs generated |
+| 3 | 30 racers | Lanes overlap, performance stays 60fps |
+| 4 | Empty lines in textarea | Filtered out silently |
+| 5 | Only whitespace input | Error shown, race blocked |
+| 6 | Duration < 10s config | Clamped to minDurationMs |
+| 7 | Resize during race | Track + lanes recalculate, camera adjusts |
+| 8 | Direction change between races | Full reset, new coordinate mapping |
+| 9 | Community asset missing running anim | Fallback to idle frames |
+| 10 | Atlas JSON parse error | Placeholder rectangle, warning shown |
+| 11 | Atlas image 404 | Placeholder rectangle, warning shown |
+| 12 | Tab unfocus during race | Ticker pauses, resumes on focus |
+| 13 | Leader gets ELIMINATE event | Camera switches to new leader |
+| 14 | BOOST + STUN overlap | STUN wins by priority |
+| 15 | Winner gets STUN near finish | Timeline precomputed — winner still finishes first |
+| 16 | Same seed twice | Identical race output |
+| 17 | Community event with invalid schema | Rejected with error, built-in events still work |
+| 18 | 0 event density | No events, pure speed race |
+| 19 | Max event density | Many events, verify no performance drop |
+| 20 | Very long race 60s | Keyframe count manageable, memory OK |
+
+---
+
+## 20) Implementation Phases
+
+### Phase A — Core Loop
+- Zustand stores setup: config, racer, scenario, playback, camera, ui
+- Seeded RNG
+- Race simulator: precompute with rectangle placeholders
+- Playback engine: keyframe interpolation
+- Basic Pixi renderer: colored rectangles as racers
+- Camera controller: leader track + finish clamp
+- React UI: textarea input + start button
+- Direction support: LTR only first
+
+### Phase B — Visual Polish
+- Spritesheet loading + AnimatedSprite per racer
+- Animation state machine
+- All 4 directions
+- Name labels
+- Background image
+- Event visual indicators on racers
+
+### Phase C — Audio + Events
+- Audio manager: BGM + SFX
+- Event registry with built-in types
+- Event visual/audio triggers during playback
+
+### Phase D — Community Support
+- Community asset upload + Zod validation + fallback
+- Community event type upload + validation
+- Asset/event browser UI
+
+### Phase E — Polish + Optional
+- Minimap with camera lock
+- Race result screen with rankings
+- Replay with same seed
+- Performance profiling + optimization pass
+- Full edge case QA
+
+---
+
+## 21) Dependencies to Add
+
+```bash
+bun add zustand pixi.js zod
+bun add -d @types/howler  # if using howler for audio
+bun add howler            # optional, can use Web Audio API directly
+```

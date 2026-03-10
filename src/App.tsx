@@ -1,5 +1,3 @@
-import viteLogo from "/vite.svg";
-import reactLogo from "./assets/react.svg";
 import "./styles.css";
 
 function App() {
@@ -9,10 +7,14 @@ function App() {
     <>
       <div>
         <a href="https://vite.dev" rel="noopener" target="_blank">
-          <img alt="Vite logo" className="logo" src={viteLogo} />
+          <img alt="Vite logo" className="logo" src="/assets/vite.svg" />
         </a>
         <a href="https://react.dev" rel="noopener" target="_blank">
-          <img alt="React logo" className="logo react" src={reactLogo} />
+          <img
+            alt="React logo"
+            className="logo react"
+            src="/assets/react.svg"
+          />
         </a>
       </div>
       <h1>Vite + React</h1>
