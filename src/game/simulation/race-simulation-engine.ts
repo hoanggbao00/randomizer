@@ -41,6 +41,7 @@ interface RacerSimState {
   isFinished: boolean;
   laneIndex: number;
   noise: ValueNoise1D;
+  opacity: number;
   speedPxPerSec: number;
   worldCross: number;
   worldMain: number;
@@ -113,6 +114,7 @@ export class RaceSimulationEngine {
         isFinished: false,
         isEliminated: false,
         finishMs: null,
+        opacity: 1,
         noise: new ValueNoise1D(params.scenario.seed, racer.id),
       };
     }
@@ -160,8 +162,8 @@ export class RaceSimulationEngine {
 
     const rankings = this.computeRankings();
     const winnerRacerId = this.findWinnerRacerId(rankings);
-    const isFinished =
-      Boolean(winnerRacerId) || this.elapsedMs >= scenario.durationMs;
+    // In event-driven mode, race ends as soon as we have a winner.
+    const isFinished = Boolean(winnerRacerId);
 
     return {
       elapsedMs: this.elapsedMs,
@@ -217,29 +219,60 @@ export class RaceSimulationEngine {
       if (!state) {
         continue;
       }
-      this.applyOneCinematicEffect(state, fx, input.trackLengthPx);
+      this.applyOneCinematicEffect(racerId, state, fx, input.trackLengthPx);
     }
   }
 
   private applyOneCinematicEffect(
+    racerId: string,
     state: RacerRuntimeState,
     fx: CinematicRacerEffect,
     trackLengthPx: number
   ): void {
+    const simState = this.sim[racerId];
+
     if (fx.isDestroyed) {
       state.isEliminated = true;
       state.speedPxPerSec = 0;
       state.accelPxPerSec2 = 0;
       state.animState = fx.animState ?? "lose";
+      state.opacity = 0;
+      if (simState) {
+        simState.isEliminated = true;
+        simState.isFinished = true;
+        simState.speedPxPerSec = 0;
+        simState.accelPxPerSec2 = 0;
+        simState.opacity = 0;
+      }
     }
 
     if (fx.velocityMultiplier !== undefined) {
-      state.speedPxPerSec *= fx.velocityMultiplier;
+      // Treat multiplier as override on top of current physics speed.
+      // If speed has been locked to 0 for a while (e.g. UFO beam),
+      // give the racer a gentle restart based on its base speed.
+      if (
+        simState &&
+        simState.speedPxPerSec === 0 &&
+        fx.velocityMultiplier > 0
+      ) {
+        const restartSpeed = simState.baseSpeedPxPerSec * fx.velocityMultiplier;
+        simState.speedPxPerSec = restartSpeed;
+        state.speedPxPerSec = restartSpeed;
+      } else {
+        state.speedPxPerSec *= fx.velocityMultiplier;
+        if (simState) {
+          simState.speedPxPerSec *= fx.velocityMultiplier;
+        }
+      }
     }
 
     if (fx.positionOverride) {
       state.worldMain = clamp(fx.positionOverride.worldMain, 0, trackLengthPx);
       state.worldCross = fx.positionOverride.worldCross;
+      if (simState) {
+        simState.worldMain = state.worldMain;
+        simState.worldCross = state.worldCross;
+      }
     }
 
     if (fx.animState) {
@@ -295,6 +328,7 @@ export class RaceSimulationEngine {
         isFinished: s.isFinished,
         animState: s.isFinished ? "win" : "lose",
         activeEventIds,
+        opacity: s.opacity,
       };
     }
 

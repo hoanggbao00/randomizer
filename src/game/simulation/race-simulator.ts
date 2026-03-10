@@ -138,7 +138,7 @@ export class RaceSimulator {
       rng,
     });
 
-    const cinematic = buildTestPolicePullCinematic({
+    const cinematic = buildTestCinematic({
       racers,
       durationMs: config.targetDurationMs,
       rng,
@@ -325,7 +325,7 @@ export class RaceSimulator {
   }
 }
 
-function buildTestPolicePullCinematic(input: {
+function buildTestCinematic(input: {
   racers: RacerInput[];
   durationMs: number;
   rng: SeededRng;
@@ -340,22 +340,23 @@ function buildTestPolicePullCinematic(input: {
   }
 
   // Keep it sparse so it doesn't dominate the race.
-  const shouldSpawn = input.rng.float() < 0.45;
-  if (!shouldSpawn) {
+  const roll = input.rng.float();
+  if (roll >= 0.6) {
     return undefined;
   }
 
-  const target = input.rng.pick(input.racers);
-  const prefabId = "TEST_POLICE_PULL";
+  const prefabs: CinematicEventPrefab[] = [];
+  const instances: CinematicEventInstance[] = [];
 
-  const startMs = input.rng.floatRange(
+  const policeTarget = input.rng.pick(input.racers);
+  const policeStartMs = input.rng.floatRange(
     input.durationMs * 0.35,
     input.durationMs * 0.7
   );
-  const durationMs = 1600;
+  const policeDurationMs = 1600;
 
-  const prefab: CinematicEventPrefab = {
-    prefabId,
+  prefabs.push({
+    prefabId: "TEST_POLICE_PULL",
     name: "Police Pull (test)",
     steps: [
       // Spawn near target, slightly behind.
@@ -364,7 +365,7 @@ function buildTestPolicePullCinematic(input: {
         eventSprite: {
           position: {
             kind: "RACER",
-            racerId: target.id,
+            racerId: policeTarget.id,
             dMain: -180,
             dCross: 0,
           },
@@ -377,13 +378,17 @@ function buildTestPolicePullCinematic(input: {
         eventSprite: {
           position: {
             kind: "RACER",
-            racerId: target.id,
+            racerId: policeTarget.id,
             dMain: -50,
             dCross: 0,
           },
         },
         racers: [
-          { racerId: target.id, velocityMultiplier: 0, animState: "idle" },
+          {
+            racerId: policeTarget.id,
+            velocityMultiplier: 0,
+            animState: "idle",
+          },
         ],
       },
       // Pull racer into the car (drag backward + fade).
@@ -391,40 +396,150 @@ function buildTestPolicePullCinematic(input: {
         atMs: 900,
         racers: [
           {
-            racerId: target.id,
+            racerId: policeTarget.id,
             velocityMultiplier: 0,
             animState: "lose",
             position: {
               target: {
                 kind: "RACER",
-                racerId: target.id,
-                dMain: -60,
+                racerId: policeTarget.id,
+                dMain: 0,
                 dCross: 0,
               },
-              opacity: 0.6,
+              opacity: 0.35,
             },
           },
         ],
       },
-      // Destroy racer (eliminate) near the end.
+      // Fade out completely, then remove racer.
       {
-        atMs: 1400,
-        racers: [{ racerId: target.id, isDestroyed: true, animState: "lose" }],
+        atMs: 1200,
+        racers: [
+          {
+            racerId: policeTarget.id,
+            velocityMultiplier: 0,
+            animState: "lose",
+            position: {
+              target: {
+                kind: "RACER",
+                racerId: policeTarget.id,
+                dMain: 0,
+                dCross: 0,
+              },
+              opacity: 0,
+            },
+          },
+        ],
+      },
+      {
+        atMs: 1350,
+        racers: [
+          { racerId: policeTarget.id, isDestroyed: true, animState: "lose" },
+        ],
         eventSprite: { opacity: 0 },
       },
     ],
-  };
+  });
 
-  const inst: CinematicEventInstance = {
-    id: `cin-${Math.floor(startMs)}-${target.id}`,
-    prefabId,
-    startMs,
-    durationMs,
-    affectedRacerIds: [target.id],
-  };
+  instances.push({
+    id: `police-${Math.floor(policeStartMs)}-${policeTarget.id}`,
+    prefabId: "TEST_POLICE_PULL",
+    startMs: policeStartMs,
+    durationMs: policeDurationMs,
+    affectedRacerIds: [policeTarget.id],
+  });
 
-  return {
-    prefabs: [prefab],
-    instances: [inst],
-  };
+  // Optional UFO event – only in some races to avoid overload.
+  if (roll < 0.3 && input.racers.length > 1) {
+    const ufoTarget = input.rng.pick(
+      input.racers.filter((r) => r.id !== policeTarget.id)
+    );
+    const ufoStartMs = input.rng.floatRange(
+      input.durationMs * 0.2,
+      input.durationMs * 0.6
+    );
+    const ufoDurationMs = 1400;
+
+    prefabs.push({
+      prefabId: "TEST_UFO_LIFT",
+      name: "UFO Lift (test)",
+      steps: [
+        // UFO hovers above target
+        {
+          atMs: 0,
+          eventSprite: {
+            position: {
+              kind: "RACER",
+              racerId: ufoTarget.id,
+              dMain: 0,
+              dCross: -80,
+            },
+            opacity: 1,
+          },
+        },
+        // Beam down and freeze racer
+        {
+          atMs: 500,
+          racers: [
+            {
+              racerId: ufoTarget.id,
+              velocityMultiplier: 0,
+              animState: "idle",
+            },
+          ],
+        },
+        // Lift racer upward and fade slightly
+        {
+          atMs: 900,
+          racers: [
+            {
+              racerId: ufoTarget.id,
+              velocityMultiplier: 0,
+              animState: "lose",
+              position: {
+                target: {
+                  kind: "RACER",
+                  racerId: ufoTarget.id,
+                  dMain: 0,
+                  dCross: -60,
+                },
+                opacity: 0.5,
+              },
+            },
+          ],
+        },
+        // Drop racer back onto track and let them continue running
+        {
+          atMs: 1300,
+          racers: [
+            {
+              racerId: ufoTarget.id,
+              velocityMultiplier: 1,
+              animState: "running",
+              position: {
+                target: {
+                  kind: "RACER",
+                  racerId: ufoTarget.id,
+                  dMain: -20,
+                  dCross: 0,
+                },
+                opacity: 1,
+              },
+            },
+          ],
+          eventSprite: { opacity: 0 },
+        },
+      ],
+    });
+
+    instances.push({
+      id: `ufo-${Math.floor(ufoStartMs)}-${ufoTarget.id}`,
+      prefabId: "TEST_UFO_LIFT",
+      startMs: ufoStartMs,
+      durationMs: ufoDurationMs,
+      affectedRacerIds: [ufoTarget.id],
+    });
+  }
+
+  return { prefabs, instances };
 }

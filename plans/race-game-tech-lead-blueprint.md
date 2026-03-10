@@ -16,7 +16,7 @@ Luồng cốt lõi:
    - Randomize **vận tốc động** cho từng racer (base speed + fluctuations).
    - Randomize/schedule **EventInstances** từ các event packs đã chọn.
 5. Ticker chạy: simulation cập nhật `RacerRuntimeState` + event runtime; renderer vẽ racers + event sprites theo world coordinates.
-6. Kết thúc race khi có winner cán đích (không cần chờ hết duration), hiển thị winner.
+6. **Race kết thúc ngay khi racer đầu tiên chạm vạch đích** (đủ `trackLengthPx`), hiển thị winner; các racer còn lại coi như thua/dừng.
 
 ---
 
@@ -33,7 +33,7 @@ Luồng cốt lõi:
 | Camera | Track leader, clamp near finish |
 | Minimap | Optional future feature |
 | Target FPS | 60 |
-| Min race duration | 10s, configurable longer |
+| Target pacing | ~10–15s (dùng để tính base speed + phân bố events, **không** chặn race) |
 | Seed reproducible | Yes |
 
 ---

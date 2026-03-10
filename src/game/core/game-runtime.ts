@@ -8,6 +8,7 @@ import { RacerRenderer } from "@/game/rendering/racer-renderer";
 import type { SimulationBusEvents } from "@/game/simulation/race-simulation-engine";
 import { RaceSimulationEngine } from "@/game/simulation/race-simulation-engine";
 import { useCameraStore } from "@/game/stores/camera-store";
+import { useDebugStore } from "@/game/stores/debug-store";
 import { usePlaybackStore } from "@/game/stores/playback-store";
 import { useRacerStore } from "@/game/stores/racer-store";
 import type { RaceDirection } from "@/game/types/race";
@@ -227,6 +228,13 @@ export class GameRuntime {
 
     // Batch update racer states in store
     useRacerStore.getState().batchUpdateRuntime(frame.racerStates);
+    // Update debug info (non-intrusive overlay)
+    useDebugStore.getState().setFrame({
+      elapsedMs,
+      phase: playbackState.phase,
+      activeCinematicSprites: getCinematicSprites(frame).length,
+      activeCinematicLabels: getCinematicDebugLabels(frame),
+    });
 
     // Update camera
     if (this.cameraController) {
@@ -245,12 +253,14 @@ export class GameRuntime {
     this.racerRenderer?.update(frame.racerStates, cameraMain);
     this.cinematicRenderer?.update(getCinematicSprites(frame), cameraMain);
 
-    // Check race end
+    // Winner can be declared before race fully finishes.
+    if (frame.winnerRacerId) {
+      usePlaybackStore.getState().setWinner(frame.winnerRacerId);
+    }
+
+    // Check race end (all racers done or timed out)
     if (frame.isFinished) {
       usePlaybackStore.getState().setPhase("ENDED");
-      if (frame.winnerRacerId) {
-        usePlaybackStore.getState().setWinner(frame.winnerRacerId);
-      }
       this.stopTicker();
     }
   }
@@ -295,4 +305,15 @@ function getCinematicSprites(frame: unknown): CinematicSpriteFrame[] {
   }
   const value = (frame as { cinematicSprites?: unknown }).cinematicSprites;
   return Array.isArray(value) ? (value as CinematicSpriteFrame[]) : [];
+}
+
+function getCinematicDebugLabels(frame: unknown): string[] {
+  if (!frame || typeof frame !== "object") {
+    return [];
+  }
+  if (!("debugLabels" in frame)) {
+    return [];
+  }
+  const value = (frame as { debugLabels?: unknown }).debugLabels;
+  return Array.isArray(value) ? (value as string[]) : [];
 }

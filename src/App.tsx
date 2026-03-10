@@ -1,4 +1,5 @@
 import "./styles.css";
+import { DebugOverlay } from "@/components/debug-overlay";
 import { RaceCanvas } from "@/components/race-canvas";
 import { RaceInputForm } from "@/components/race-input-form";
 import { useGameBridge } from "@/game/hooks/use-game-bridge";
@@ -6,7 +7,6 @@ import { usePlaybackStore } from "@/game/stores/playback-store";
 
 function App() {
   const bridge = useGameBridge();
-  const phase = usePlaybackStore((s) => s.phase);
   const winnerRacerId = usePlaybackStore((s) => s.winnerRacerId);
 
   return (
@@ -14,9 +14,10 @@ function App() {
       {/* Game Canvas — takes full remaining height */}
       <div className="relative flex-1">
         <RaceCanvas bridge={bridge} className="absolute inset-0" />
+        <DebugOverlay />
 
         {/* Winner overlay */}
-        {phase === "ENDED" && winnerRacerId ? (
+        {winnerRacerId ? (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60">
             <div className="rounded-xl bg-background p-8 text-center shadow-2xl">
               <p className="font-medium text-muted-foreground text-sm">

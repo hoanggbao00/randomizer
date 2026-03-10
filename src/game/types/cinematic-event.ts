@@ -58,6 +58,8 @@ export interface CinematicRacerEffect {
 }
 
 export interface CinematicFrame {
+  /** Optional debug labels per active instance (prefab/targets). */
+  debugLabels?: string[];
   racerEffects: Record<string, CinematicRacerEffect>;
   sprites: CinematicEventSpriteState[];
 }

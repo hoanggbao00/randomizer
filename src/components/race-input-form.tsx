@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import type { useGameBridge } from "@/game/hooks/use-game-bridge";
 import { usePlaybackStore } from "@/game/stores/playback-store";
 import { useUIStore } from "@/game/stores/ui-store";
@@ -5,6 +6,14 @@ import { useUIStore } from "@/game/stores/ui-store";
 interface RaceInputFormProps {
   bridge: ReturnType<typeof useGameBridge>;
 }
+
+const MOCK_RACERS = `Alice
+Bob
+Charlie
+Diana
+Eve
+Frank
+Grace`;
 
 /**
  * RaceInputForm — textarea for racer names + race start button.
@@ -21,14 +30,24 @@ export function RaceInputForm({ bridge }: RaceInputFormProps) {
   const isPlaying = phase === "PLAYING" || phase === "COUNTDOWN";
   const isEnded = phase === "ENDED";
 
+  const handleDefaultRacers = () => {
+    setTextarea(MOCK_RACERS);
+    previewRacers(MOCK_RACERS);
+  };
+
   return (
     <div className="flex flex-col gap-3 p-4">
-      <label className="font-semibold text-sm" htmlFor="racer-names">
-        Racer Names
-        <span className="ml-1 text-muted-foreground text-xs">
-          (one per line)
-        </span>
-      </label>
+      <div className="flex flex-row items-center justify-between gap-2">
+        <label className="font-semibold text-sm" htmlFor="racer-names">
+          Racer Names
+          <span className="ml-1 text-muted-foreground text-xs">
+            (one per line)
+          </span>
+        </label>
+        <Button disabled={isPlaying} onClick={handleDefaultRacers} size="sm">
+          Default Racers
+        </Button>
+      </div>
 
       <textarea
         className="w-full resize-none rounded-md border bg-background p-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"

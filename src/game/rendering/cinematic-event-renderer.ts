@@ -71,9 +71,11 @@ export class CinematicEventRenderer {
 
   private createNode(id: string): Graphics {
     const g = new Graphics();
-    // Blue-ish box placeholder
-    g.roundRect(-20, -10, 40, 20, 6);
-    g.fill(0x55_aa_ff);
+    const isUfo = id.startsWith("ufo-");
+    const color = isUfo ? 0xbd_6b_ff : 0x55_aa_ff;
+    const size = isUfo ? { w: 30, h: 30 } : { w: 40, h: 20 };
+    g.roundRect(-size.w / 2, -size.h / 2, size.w, size.h, 6);
+    g.fill(color);
     this.worldContainer.addChild(g);
     this.nodes.set(id, g);
     return g;
