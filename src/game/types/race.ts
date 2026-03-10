@@ -4,6 +4,11 @@ export interface RaceConfig {
   allowElimination: boolean;
   backgroundImage?: string;
   direction: RaceDirection;
+  /**
+   * Enabled cinematic event packs (by prefab id).
+   * If undefined, all built-in packs are considered enabled.
+   */
+  enabledCinematicPacks?: string[];
   /** 0-1, controls how many events per racer */
   eventDensity: number;
   maxRacers: number;

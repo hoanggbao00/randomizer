@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import type { useGameBridge } from "@/game/hooks/use-game-bridge";
+import { useConfigStore } from "@/game/stores/config-store";
 import { usePlaybackStore } from "@/game/stores/playback-store";
 import { useUIStore } from "@/game/stores/ui-store";
 
@@ -25,6 +26,11 @@ export function RaceInputForm({ bridge }: RaceInputFormProps) {
   const errors = useUIStore((s) => s.errors);
   const warnings = useUIStore((s) => s.warnings);
   const phase = usePlaybackStore((s) => s.phase);
+  const enabledPacks = useConfigStore(
+    (s) =>
+      s.config.enabledCinematicPacks ?? ["TEST_POLICE_PULL", "TEST_UFO_LIFT"]
+  );
+  const setConfig = useConfigStore((s) => s.setConfig);
   const { startRace, resetRace, previewRacers } = bridge;
 
   const isPlaying = phase === "PLAYING" || phase === "COUNTDOWN";
@@ -70,6 +76,40 @@ export function RaceInputForm({ bridge }: RaceInputFormProps) {
         rows={8}
         value={textareaInput}
       />
+
+      <div className="flex flex-col gap-1">
+        <span className="font-semibold text-muted-foreground text-xs">
+          Cinematic events
+        </span>
+        <div className="flex flex-wrap gap-3 text-xs">
+          {[
+            { id: "TEST_POLICE_PULL", label: "Police pull" },
+            { id: "TEST_UFO_LIFT", label: "UFO lift" },
+          ].map((pack) => {
+            const checked = enabledPacks.includes(pack.id);
+            return (
+              <label
+                className="flex cursor-pointer select-none items-center gap-1"
+                key={pack.id}
+              >
+                <input
+                  checked={checked}
+                  className="h-3 w-3 rounded border-muted-foreground"
+                  disabled={isPlaying}
+                  onChange={(event) => {
+                    const next = event.target.checked
+                      ? Array.from(new Set([...enabledPacks, pack.id]))
+                      : enabledPacks.filter((id) => id !== pack.id);
+                    setConfig({ enabledCinematicPacks: next });
+                  }}
+                  type="checkbox"
+                />
+                <span>{pack.label}</span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
 
       {errors.length > 0 && (
         <ul className="text-destructive text-sm" role="alert">

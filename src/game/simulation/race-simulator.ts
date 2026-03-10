@@ -150,6 +150,7 @@ export class RaceSimulator {
       racers,
       durationMs: config.targetDurationMs,
       rng,
+      enabledCinematicPacks: config.enabledCinematicPacks,
     });
 
     return {
@@ -337,6 +338,7 @@ function buildTestCinematic(input: {
   racers: RacerInput[];
   durationMs: number;
   rng: SeededRng;
+  enabledCinematicPacks?: string[];
 }):
   | {
       prefabs: CinematicEventPrefab[];
@@ -353,107 +355,115 @@ function buildTestCinematic(input: {
     return undefined;
   }
 
+  const enabledPacks = new Set(
+    input.enabledCinematicPacks ?? ["TEST_POLICE_PULL", "TEST_UFO_LIFT"]
+  );
+
   const prefabs: CinematicEventPrefab[] = [];
   const instances: CinematicEventInstance[] = [];
 
-  const policeTarget = input.rng.pick(input.racers);
-  const policeStartMs = input.rng.floatRange(
-    input.durationMs * 0.35,
-    input.durationMs * 0.7
-  );
-  const policeDurationMs = 1600;
-  const policeLocalDuration = policeDurationMs;
+  if (enabledPacks.has("TEST_POLICE_PULL")) {
+    const policeTarget = input.rng.pick(input.racers);
+    const policeStartMs = input.rng.floatRange(
+      input.durationMs * 0.35,
+      input.durationMs * 0.7
+    );
+    const policeDurationMs = 1600;
+    const policeLocalDuration = policeDurationMs;
 
-  const policeSpriteSteps = buildSpriteMoveSteps({
-    startMs: 0,
-    durationMs: policeLocalDuration,
-    from: {
-      kind: "RACER",
-      racerId: policeTarget.id,
-      dMain: -180,
-      dCross: 0,
-    },
-    to: {
-      kind: "RACER",
-      racerId: policeTarget.id,
-      dMain: -50,
-      dCross: 0,
-    },
-    fromOpacity: 1,
-    toOpacity: 0,
-  });
-
-  const policeRacerSteps = mergeStepArrays(
-    [
-      {
-        atMs: 500,
-        racers: [
-          {
-            racerId: policeTarget.id,
-            velocityMultiplier: 0,
-            animState: "idle",
-          },
-        ],
-      },
-    ],
-    buildRacerMoveSteps({
-      racerId: policeTarget.id,
-      startMs: 900,
-      durationMs: 300,
+    const policeSpriteSteps = buildSpriteMoveSteps({
+      startMs: 0,
+      durationMs: policeLocalDuration,
       from: {
         kind: "RACER",
         racerId: policeTarget.id,
-        dMain: 0,
+        dMain: -180,
         dCross: 0,
       },
       to: {
         kind: "RACER",
         racerId: policeTarget.id,
-        dMain: 0,
+        dMain: -50,
         dCross: 0,
       },
-      fromOpacity: 0.35,
+      fromOpacity: 1,
       toOpacity: 0,
-    }),
-    [
-      {
-        atMs: 1350,
-        racers: [
-          {
-            racerId: policeTarget.id,
-            isDestroyed: true,
-            animState: "lose",
-          },
-        ],
+    });
+
+    const policeRacerSteps = mergeStepArrays(
+      [
+        {
+          atMs: 500,
+          racers: [
+            {
+              racerId: policeTarget.id,
+              velocityMultiplier: 0,
+              animState: "idle",
+            },
+          ],
+        },
+      ],
+      buildRacerMoveSteps({
+        racerId: policeTarget.id,
+        startMs: 900,
+        durationMs: 300,
+        from: {
+          kind: "RACER",
+          racerId: policeTarget.id,
+          dMain: 0,
+          dCross: 0,
+        },
+        to: {
+          kind: "RACER",
+          racerId: policeTarget.id,
+          dMain: 0,
+          dCross: 0,
+        },
+        fromOpacity: 0.35,
+        toOpacity: 0,
+      }),
+      [
+        {
+          atMs: 1350,
+          racers: [
+            {
+              racerId: policeTarget.id,
+              isDestroyed: true,
+              animState: "lose",
+            },
+          ],
+        },
+      ]
+    );
+
+    prefabs.push({
+      prefabId: "TEST_POLICE_PULL",
+      name: "Police Pull (test)",
+      visual: {
+        color: 0x1f_87_ff,
+        shape: "rect",
+        width: 46,
+        height: 24,
       },
-    ]
-  );
+      steps: mergeStepArrays(policeSpriteSteps, policeRacerSteps),
+    });
 
-  prefabs.push({
-    prefabId: "TEST_POLICE_PULL",
-    name: "Police Pull (test)",
-    visual: {
-      color: 0x1f_87_ff,
-      shape: "rect",
-      width: 46,
-      height: 24,
-    },
-    steps: mergeStepArrays(policeSpriteSteps, policeRacerSteps),
-  });
-
-  instances.push({
-    id: `police-${Math.floor(policeStartMs)}-${policeTarget.id}`,
-    prefabId: "TEST_POLICE_PULL",
-    startMs: policeStartMs,
-    durationMs: policeDurationMs,
-    affectedRacerIds: [policeTarget.id],
-  });
+    instances.push({
+      id: `police-${Math.floor(policeStartMs)}-${policeTarget.id}`,
+      prefabId: "TEST_POLICE_PULL",
+      startMs: policeStartMs,
+      durationMs: policeDurationMs,
+      affectedRacerIds: [policeTarget.id],
+    });
+  }
 
   // Optional UFO event – only in some races to avoid overload.
-  if (roll < 0.3 && input.racers.length > 1) {
-    const ufoTarget = input.rng.pick(
-      input.racers.filter((r) => r.id !== policeTarget.id)
-    );
+  if (
+    roll < 0.3 &&
+    input.racers.length > 1 &&
+    enabledPacks.has("TEST_UFO_LIFT")
+  ) {
+    const ufoTarget = input.rng.pick(input.racers);
     const ufoStartMs = input.rng.floatRange(
       input.durationMs * 0.2,
       input.durationMs * 0.6

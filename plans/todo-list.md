@@ -14,7 +14,7 @@ ref: ./race-game-tech-lead-blueprint.md
 - [x] Race ends when first racer reaches finish
 - [x] Camera leader tracking without snap-back
 
-## Phase B — Cinematic/scripted events (in progress)
+## Phase B — Cinematic/scripted events (done)
 - [x] Prefab/Instance model (minimal)
 - [x] Cinematic runner (simulation-side) + placeholder renderer
 - [x] Mock Police + UFO events (Graphics placeholders)
@@ -23,15 +23,15 @@ ref: ./race-game-tech-lead-blueprint.md
 - [x] Debug overlay (show phase/time + active cinematic labels)
 
 ### Next (Phase B polish)
-- [ ] Add easing/tween helpers (ease-in-out) for smoother motion
-- [ ] Improve event authoring ergonomics (from/to segments, durations)
-- [ ] Add “debug toggle” (keyboard `D` or UI toggle)
-- [ ] Add per-event color/shape config (not hardcoded by id prefix)
+- [x] Add easing/tween helpers (ease-in-out) for smoother motion
+- [x] Improve event authoring ergonomics (from/to segments, durations)
+- [x] Add “debug toggle” (keyboard `D` or UI toggle)
+- [x] Add per-event color/shape config (not hardcoded by id prefix)
 
-## Phase C — Event selection UI (planned)
-- [ ] Add event-pack selection UI (checkbox list) in control panel
-- [ ] Store enabled packs in config/state
-- [ ] Schedule only enabled cinematic prefabs on Start
+## Phase C — Event selection UI (in progress)
+- [x] Add event-pack selection UI (checkbox list) in control panel
+- [x] Store enabled packs in config/state
+- [x] Schedule only enabled cinematic prefabs on Start
 
 ## Phase D — Real assets (planned)
 - [ ] Replace placeholder Graphics with spritesheet-based event rendering
