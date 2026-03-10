@@ -21,17 +21,23 @@ interface DebugStore {
   reset: () => void;
   setFrame: (frame: DebugFrameInfo) => void;
   setPlannedCinematics: (items: PlannedCinematicInstanceInfo[]) => void;
+  showOverlay: boolean;
+  toggleOverlay: () => void;
 }
 
+const DEFAULT_FRAME: DebugFrameInfo = {
+  elapsedMs: 0,
+  phase: "IDLE",
+  activeCinematicSprites: 0,
+  activeCinematicLabels: [],
+};
+
 export const useDebugStore = create<DebugStore>()((set) => ({
-  frame: {
-    elapsedMs: 0,
-    phase: "IDLE",
-    activeCinematicSprites: 0,
-    activeCinematicLabels: [],
-  },
+  frame: DEFAULT_FRAME,
   plannedCinematics: [],
+  showOverlay: true,
   setFrame: (frame) => set({ frame }),
   setPlannedCinematics: (items) => set({ plannedCinematics: items }),
-  reset: () => set({ frame: null, plannedCinematics: [] }),
+  toggleOverlay: () => set((prev) => ({ showOverlay: !prev.showOverlay })),
+  reset: () => set({ frame: DEFAULT_FRAME, plannedCinematics: [] }),
 }));

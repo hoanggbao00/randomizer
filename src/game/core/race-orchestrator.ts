@@ -2,6 +2,7 @@ import { Application } from "pixi.js";
 import { RaceSimulator } from "@/game/simulation/race-simulator";
 import { useCameraStore } from "@/game/stores/camera-store";
 import { useConfigStore } from "@/game/stores/config-store";
+import { useDebugStore } from "@/game/stores/debug-store";
 import { usePlaybackStore } from "@/game/stores/playback-store";
 import { useRacerStore } from "@/game/stores/racer-store";
 import { useScenarioStore } from "@/game/stores/scenario-store";
@@ -84,6 +85,7 @@ export class RaceOrchestrator {
     const racerStore = useRacerStore.getState();
 
     uiStore.clearMessages();
+    useDebugStore.getState().reset();
 
     // Parse racers from textarea
     racerStore.setInputsFromTextarea(uiStore.textareaInput);
@@ -168,6 +170,7 @@ export class RaceOrchestrator {
     const uiStore = useUIStore.getState();
     const racerStore = useRacerStore.getState();
     this.runtime?.stopTicker();
+    useDebugStore.getState().reset();
     usePlaybackStore.getState().reset();
     useScenarioStore.getState().clearScenario();
     useCameraStore.getState().reset();

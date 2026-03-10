@@ -6,9 +6,10 @@ interface DebugOverlayProps {
 
 export function DebugOverlay({ className }: DebugOverlayProps) {
   const frame = useDebugStore((s) => s.frame);
+  const show = useDebugStore((s) => s.showOverlay);
   const planned = useDebugStore((s) => s.plannedCinematics);
 
-  if (!frame) {
+  if (!(frame && show)) {
     return null;
   }
 
