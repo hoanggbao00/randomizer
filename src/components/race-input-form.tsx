@@ -35,6 +35,12 @@ export function RaceInputForm({ bridge }: RaceInputFormProps) {
     previewRacers(MOCK_RACERS);
   };
 
+  useEffect(() => {
+    setTimeout(() => {
+      handleDefaultRacers();
+    }, 500);
+  }, []);
+
   return (
     <div className="flex flex-col gap-3 p-4">
       <div className="flex flex-row items-center justify-between gap-2">

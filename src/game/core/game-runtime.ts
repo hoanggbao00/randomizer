@@ -60,6 +60,20 @@ export class GameRuntime {
     this.scenario = scenario;
     this.racerNames = Object.fromEntries(racers.map((r) => [r.id, r.name]));
 
+    // Populate planned cinematic schedule for debug overlay.
+    if (isEventDrivenScenario(scenario) && scenario.cinematic?.instances) {
+      useDebugStore.getState().setPlannedCinematics(
+        scenario.cinematic.instances.map((i) => ({
+          id: i.id,
+          prefabId: i.prefabId,
+          startMs: i.startMs,
+          affectedRacerIds: i.affectedRacerIds,
+        }))
+      );
+    } else {
+      useDebugStore.getState().setPlannedCinematics([]);
+    }
+
     // Initialize camera controller
     this.cameraController = new CameraController({
       viewportWidth: this.viewportWidth,
