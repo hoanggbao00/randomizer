@@ -7,6 +7,7 @@ import { createDirectionMapper } from "@/game/utils/coordinate-utils";
 const RACER_WIDTH = 48;
 const RACER_HEIGHT = 48;
 const LABEL_OFFSET = 8;
+const FINISH_LABEL_SWITCH_THRESHOLD = 50;
 const LABEL_STYLE = new TextStyle({
   fontSize: 12,
   fill: 0xff_ff_ff,
@@ -116,37 +117,53 @@ export class RacerRenderer {
     node.container.x = screen.x;
     node.container.y = screen.y;
 
-    // Position label ahead of racer based on direction
-    this.positionLabel(node.label, this.direction);
+    const isNearFinish =
+      this.trackLengthPx > 0 &&
+      Math.abs(this.trackLengthPx - state.worldMain) <
+        FINISH_LABEL_SWITCH_THRESHOLD;
+
+    this.positionLabel(node.label, this.direction, isNearFinish);
 
     // Dim eliminated racers, allow cinematic override.
     const baseAlpha = state.isEliminated ? 0.4 : 1;
     node.container.alpha = state.opacity ?? baseAlpha;
   }
 
-  private positionLabel(label: Text, direction: RaceDirection): void {
+  private positionLabel(
+    label: Text,
+    direction: RaceDirection,
+    isNearFinish: boolean
+  ): void {
+    const forwardOffset = RACER_WIDTH / 2 + LABEL_OFFSET;
+    const backwardOffset = -(RACER_WIDTH / 2 + LABEL_OFFSET);
+
     switch (direction) {
       case "LTR": {
-        label.x = RACER_WIDTH / 2 + LABEL_OFFSET;
+        label.x = isNearFinish ? backwardOffset : forwardOffset;
         label.y = 0;
+        label.anchor.set(isNearFinish ? 1 : 0, 0.5);
         break;
       }
       case "RTL": {
-        label.x = -(RACER_WIDTH / 2 + LABEL_OFFSET);
+        label.x = isNearFinish ? -backwardOffset : -forwardOffset;
         label.y = 0;
-        label.anchor.set(1, 0.5);
+        label.anchor.set(isNearFinish ? 0 : 1, 0.5);
         break;
       }
       case "TTB": {
         label.x = 0;
-        label.y = RACER_HEIGHT / 2 + LABEL_OFFSET;
-        label.anchor.set(0.5, 0);
+        label.y = isNearFinish
+          ? -(RACER_HEIGHT / 2 + LABEL_OFFSET)
+          : RACER_HEIGHT / 2 + LABEL_OFFSET;
+        label.anchor.set(0.5, isNearFinish ? 1 : 0);
         break;
       }
       case "BTT": {
         label.x = 0;
-        label.y = -(RACER_HEIGHT / 2 + LABEL_OFFSET);
-        label.anchor.set(0.5, 1);
+        label.y = isNearFinish
+          ? RACER_HEIGHT / 2 + LABEL_OFFSET
+          : -(RACER_HEIGHT / 2 + LABEL_OFFSET);
+        label.anchor.set(0.5, isNearFinish ? 0 : 1);
         break;
       }
       default: {

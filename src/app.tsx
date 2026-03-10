@@ -4,10 +4,18 @@ import { RaceCanvas } from "@/components/race-canvas";
 import { RaceInputForm } from "@/components/race-input-form";
 import { useGameBridge } from "@/game/hooks/use-game-bridge";
 import { usePlaybackStore } from "@/game/stores/playback-store";
+import { useRacerStore } from "@/game/stores/racer-store";
 
 function App() {
   const bridge = useGameBridge();
   const winnerRacerId = usePlaybackStore((s) => s.winnerRacerId);
+  const winnerName = useRacerStore((state) => {
+    if (!winnerRacerId) {
+      return null;
+    }
+    const found = state.inputs.find((r) => r.id === winnerRacerId);
+    return found?.name ?? winnerRacerId;
+  });
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
@@ -24,7 +32,7 @@ function App() {
                 Winner
               </p>
               <h2 className="mt-1 font-bold text-4xl text-primary">
-                🏆 {winnerRacerId}
+                🏆 {winnerName}
               </h2>
             </div>
           </div>
