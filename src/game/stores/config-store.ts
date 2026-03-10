@@ -12,6 +12,7 @@ const DEFAULT_CONFIG: RaceConfig = {
   maxRacers: 30,
   scenarioMode: "EVENT_DRIVEN",
   enabledCinematicPacks: ["TEST_POLICE_PULL", "TEST_UFO_LIFT"],
+  selectedCharacterIds: [],
 };
 
 interface ConfigStore {

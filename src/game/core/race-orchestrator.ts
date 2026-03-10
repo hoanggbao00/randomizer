@@ -7,6 +7,7 @@ import { usePlaybackStore } from "@/game/stores/playback-store";
 import { useRacerStore } from "@/game/stores/racer-store";
 import { useScenarioStore } from "@/game/stores/scenario-store";
 import { useUIStore } from "@/game/stores/ui-store";
+import type { RacerInput } from "@/game/types/racer";
 import { computeTrackLength } from "@/game/utils/coordinate-utils";
 import { GameRuntime } from "./game-runtime";
 
@@ -60,9 +61,13 @@ export class RaceOrchestrator {
     const racerStore = useRacerStore.getState();
 
     racerStore.setInputsFromTextarea(rawNames);
-    const racers = useRacerStore
+    const baseRacers = useRacerStore
       .getState()
       .inputs.slice(0, configStore.config.maxRacers);
+    const racers = assignAssetsToRacers(
+      baseRacers,
+      configStore.config.selectedCharacterIds
+    );
 
     const viewportWidth = this.app?.renderer.width ?? window.innerWidth;
     const viewportHeight = this.app?.renderer.height ?? window.innerHeight;
@@ -102,7 +107,11 @@ export class RaceOrchestrator {
       );
     }
 
-    const cappedRacers = racers.slice(0, configStore.config.maxRacers);
+    const cappedBaseRacers = racers.slice(0, configStore.config.maxRacers);
+    const cappedRacers = assignAssetsToRacers(
+      cappedBaseRacers,
+      configStore.config.selectedCharacterIds
+    );
 
     // Compute track length from viewport
     const viewportWidth = this.app?.renderer.width ?? window.innerWidth;
@@ -228,4 +237,29 @@ export class RaceOrchestrator {
       }
     }
   };
+}
+
+function assignAssetsToRacers(
+  racers: RacerInput[],
+  selectedCharacterIds?: string[]
+): RacerInput[] {
+  if (!selectedCharacterIds || selectedCharacterIds.length === 0) {
+    return racers;
+  }
+
+  if (selectedCharacterIds.length === 1) {
+    const assetId = selectedCharacterIds[0];
+    return racers.map((racer) => ({ ...racer, assetId }));
+  }
+
+  const result: RacerInput[] = [];
+  const count = selectedCharacterIds.length;
+  const offset = Math.floor(Math.random() * count);
+
+  for (let index = 0; index < racers.length; index += 1) {
+    const assetId = selectedCharacterIds[(offset + index) % count];
+    result.push({ ...racers[index], assetId });
+  }
+
+  return result;
 }

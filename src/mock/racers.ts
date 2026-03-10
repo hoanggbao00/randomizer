@@ -2,6 +2,6 @@ export const characters = {
   knight: {
     id: "knight",
     displayName: "Knight",
-    spritesheet: "/assets/characters/knight/spritesheet.json",
+    spritesheet: "/assets/racers/knight/spritesheet.json",
   },
 } as const;

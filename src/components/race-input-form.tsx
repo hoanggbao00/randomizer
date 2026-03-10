@@ -1,8 +1,10 @@
+import { SpritePreview } from "@/components/sprite-preview";
 import { Button } from "@/components/ui/button";
 import type { useGameBridge } from "@/game/hooks/use-game-bridge";
 import { useConfigStore } from "@/game/stores/config-store";
 import { usePlaybackStore } from "@/game/stores/playback-store";
 import { useUIStore } from "@/game/stores/ui-store";
+import { characters } from "@/mock/racers";
 
 interface RaceInputFormProps {
   bridge: ReturnType<typeof useGameBridge>;
@@ -27,10 +29,12 @@ export function RaceInputForm({ bridge }: RaceInputFormProps) {
   const warnings = useUIStore((s) => s.warnings);
   const phase = usePlaybackStore((s) => s.phase);
   const enabledPacks = useConfigStore(
-    (s) =>
-      s.config.enabledCinematicPacks ?? ["TEST_POLICE_PULL", "TEST_UFO_LIFT"]
+    (s) => s.config.enabledCinematicPacks ?? []
   );
   const setConfig = useConfigStore((s) => s.setConfig);
+  const selectedCharacterIds = useConfigStore(
+    (s) => s.config.selectedCharacterIds ?? []
+  );
   const { startRace, resetRace, previewRacers } = bridge;
 
   const isPlaying = phase === "PLAYING" || phase === "COUNTDOWN";
@@ -105,6 +109,42 @@ export function RaceInputForm({ bridge }: RaceInputFormProps) {
                   type="checkbox"
                 />
                 <span>{pack.label}</span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <span className="font-semibold text-muted-foreground text-xs">
+          Sprites
+        </span>
+        <div className="flex flex-wrap gap-3 text-xs">
+          {Object.values(characters).map((ch) => {
+            const checked = selectedCharacterIds.includes(ch.id);
+            return (
+              <label
+                className="flex cursor-pointer select-none items-center gap-2"
+                key={ch.id}
+              >
+                <SpritePreview
+                  className="rounded-md border bg-muted"
+                  size={40}
+                  spritesheetUrl={ch.spritesheet}
+                />
+                <input
+                  checked={checked}
+                  className="h-3 w-3 rounded border-muted-foreground"
+                  disabled={isPlaying}
+                  onChange={(event) => {
+                    const next = event.target.checked
+                      ? Array.from(new Set([...selectedCharacterIds, ch.id]))
+                      : selectedCharacterIds.filter((id) => id !== ch.id);
+                    setConfig({ selectedCharacterIds: next });
+                  }}
+                  type="checkbox"
+                />
+                <span>{ch.displayName}</span>
               </label>
             );
           })}

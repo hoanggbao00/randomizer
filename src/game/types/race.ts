@@ -20,6 +20,11 @@ export interface RaceConfig {
    */
   scenarioMode?: "PRECOMPUTED" | "EVENT_DRIVEN";
   seed: string;
+  /**
+   * Selected character sprite ids (from mock/characters or real assets).
+   * Used to assign assetIds to racers at race start.
+   */
+  selectedCharacterIds?: string[];
   targetDurationMs: number;
   /** Computed from viewport at race start */
   trackLengthPx: number;

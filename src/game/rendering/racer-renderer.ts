@@ -1,5 +1,6 @@
 import type { Application } from "pixi.js";
 import { Container, Graphics, Text, TextStyle } from "pixi.js";
+import { assetManager } from "@/game/assets/asset-manager";
 import type { RaceDirection } from "@/game/types/race";
 import type { RacerRuntimeState } from "@/game/types/racer";
 import { createDirectionMapper } from "@/game/utils/coordinate-utils";
@@ -56,15 +57,8 @@ export class RacerRenderer {
     this.worldContainer.x = 0;
     this.worldContainer.y = 0;
 
-    const colors = [
-      0xe7_4c_3c, 0x34_98_db, 0x2e_cc_71, 0xf3_9c_12, 0x9b_59_b6, 0x1a_bc_9c,
-      0xe6_7e_22, 0x34_49_5e, 0xf1_c4_0f, 0x16_a0_85,
-    ];
-
-    let colorIndex = 0;
     for (const [racerId, state] of Object.entries(racerStates)) {
-      const color = colors[colorIndex % colors.length];
-      colorIndex += 1;
+      const { color } = assetManager.getRacerVisual(racerId);
 
       const container = new Container();
       const body = new Graphics();
