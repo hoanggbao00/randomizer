@@ -1,0 +1,35 @@
+---
+description: Prefer React 19 Compiler patterns before manual memoization
+globs: "**/*.{ts,tsx,js,jsx}"
+alwaysApply: false
+---
+
+# React Compiler first (React 19)
+
+- **Default**: write code that is naturally compiler-friendly; assume React Compiler will optimize.
+- **Only add `useMemo` / `useCallback`** after profiling or when you have a proven referential-stability requirement.
+
+## Prefer this
+- **Stable component boundaries**: keep components pure; derive values from props/state without mutating inputs.
+- **Compute inline** when cheap; extract helpers when it improves clarity.
+- **Use `memo` sparingly**; prefer splitting components over heavy memoization.
+- **Component props**: prefer `interface Props {}` over inline parameter types.
+
+## Reach for `useMemo` / `useCallback` only when
+- Passing callbacks/objects to **non-compiler-aware** libs that rely on referential equality
+- A dependency causes **observable re-renders** that you can’t fix by refactoring
+
+### Example
+
+```tsx
+// ✅ GOOD: simple, compiler-friendly
+interface RowProps {
+  item: Item;
+  onSelect: (id: string) => void;
+}
+
+function Row({ item, onSelect }: RowProps) {
+  return <button onClick={() => onSelect(item.id)}>{item.name}</button>;
+}
+```
+

@@ -9,10 +9,14 @@
 Xây game đua xe vui nhộn chạy client-side với React 19 + TypeScript + Zustand + PixiJS.
 
 Luồng cốt lõi:
-1. Nhập danh sách racer từ textarea, mỗi dòng một tên.
-2. Precompute toàn bộ kịch bản race trước khi chạy — winner, speed curve, random events.
-3. Playback race theo timeline để người xem cảm giác ngẫu nhiên nhưng hợp lý.
-4. Kết thúc race trả kết quả winner chắc chắn đúng theo kịch bản.
+1. User chọn danh sách racer/characters (mỗi dòng một tên hoặc chọn từ roster).
+2. User chọn “event packs / obstacles” khả dụng (chỉ chọn loại event, chưa có timeline cụ thể).
+3. Preview racers ngay trên canvas (idle) khi user gõ/chọn.
+4. Nhấn Start → runtime sẽ:
+   - Randomize **vận tốc động** cho từng racer (base speed + fluctuations).
+   - Randomize/schedule **EventInstances** từ các event packs đã chọn.
+5. Ticker chạy: simulation cập nhật `RacerRuntimeState` + event runtime; renderer vẽ racers + event sprites theo world coordinates.
+6. Kết thúc race khi có winner cán đích (không cần chờ hết duration), hiển thị winner.
 
 ---
 
@@ -66,15 +70,17 @@ flowchart TD
   UI --> RacerStore[Racer Store]
   UI --> Bridge[Game Bridge]
   Bridge --> Runtime[Game Runtime]
-  Runtime --> Simulator[Race Simulator]
+  Runtime --> Simulator[Race Scenario Builder]
   Runtime --> AssetMgr[Asset Manager]
   Runtime --> PixiApp[Pixi Application]
-  Simulator --> Timeline[Precomputed Timeline]
-  Runtime --> Playback[Playback Engine]
-  Playback --> EventSys[Event System]
-  Playback --> Camera[Camera Controller]
-  Playback --> Anim[Animation Controller]
-  Playback --> PlaybackStore[Playback Store]
+  Simulator --> Scenario[RaceScenario]
+  Runtime --> Playback[Playback Engine (legacy PRECOMPUTED)]
+  Runtime --> Sim[Simulation Engine (EVENT_DRIVEN)]
+  Sim --> EventSys[Event Registry + Effect Resolver]
+  Playback --> EventSys
+  Sim --> Camera[Camera Controller]
+  Playback --> Camera
+  Runtime --> PlaybackStore[Playback Store]
   Camera --> CameraStore[Camera Store]
   AssetMgr --> SpriteRegistry[Sprite Registry]
   AssetMgr --> AudioRegistry[Audio Registry]
@@ -448,8 +454,8 @@ interface RacerState {
 // stores/scenario-store.ts
 
 interface ScenarioState {
-  scenario: PrecomputedScenario | null
-  setScenario: (s: PrecomputedScenario) => void
+  scenario: RaceScenario | null
+  setScenario: (s: RaceScenario) => void
   clearScenario: () => void
 }
 ```
@@ -536,7 +542,36 @@ flowchart LR
 
 ---
 
-## 9) Precompute Algorithm
+## 9) Scenario Architectures
+
+Hệ thống hỗ trợ 2 mode:
+
+- **EVENT_DRIVEN (default)**: scenario chỉ định **events xảy ra trong race**; mỗi racer có **base speed + fluctuation liên tục**; winner emerge từ simulation runtime.
+- **PRECOMPUTED (legacy/back-compat)**: precompute timeline + winner predetermined (chỉ dùng khi cần replay exact/behavior cũ).
+
+---
+
+## 10) EVENT_DRIVEN Simulation (default)
+
+### 10.1 Input
+- `RacerInput[]` từ racer store
+- `RaceConfig` từ config store (`scenarioMode = 'EVENT_DRIVEN'`)
+
+### 10.2 Steps (high-level)
+1. **Seed RNG** từ `config.seed` (hoặc timestamp nếu trống).
+2. **Plan events** theo `eventDensity` (không cần biết winner).
+3. **Init per-racer model**:
+   - `baseSpeed` (hơi lệch nhau theo seed + racerId)
+   - Noise-driven acceleration (smooth) + mean-reversion về `baseSpeed`
+4. **Each frame**:
+   - Resolve active events → `speedMultiplier/accelDelta/progressLock`
+   - Update `speed/accel/worldMain` (clamped; không teleport)
+   - Nếu racer chạm finish → set `finishMs`
+5. **End race** khi có racer đầu tiên có `finishMs` hữu hạn (winner declared ngay).
+
+---
+
+## 11) PRECOMPUTED Algorithm (legacy/back-compat)
 
 ### 9.1 Input
 - `RacerInput[]` from racer store
@@ -546,7 +581,7 @@ flowchart LR
 
 1. **Parse & validate** — trim empty lines, generate unique IDs, cap at maxRacers.
 2. **Seed RNG** — initialize `SeededRng` from `config.seed`.
-3. **Pick winner** — uniform random from racer list.
+3. **Pick winner** — uniform random from racer list. *(legacy only)*
 4. **Assign finish times**:
    - Winner finishes at `targetDurationMs`.
    - Others finish at `targetDurationMs + rng.range(500, 3000)`.
@@ -596,7 +631,63 @@ worldMain = clamp(worldMain, 0, trackLengthPx)
 
 ---
 
-## 10) Event System — Extensible Registry
+## 12) Event System — Extensible Registry
+
+### 12.0 Two-layer Event Model (Prefab vs Instance)
+
+Để đáp ứng các event kiểu “UFO hút racer”, “xe cảnh sát bắt racer”, event được tách 2 lớp:
+
+- **EventPrefab**: định nghĩa asset/spritesheet + hành vi ở mức “kịch bản” (có thể tham chiếu racer/track).
+- **EventInstance**: một lần xuất hiện cụ thể trong race (được randomize/schedule lúc Start).
+
+Event có thể ảnh hưởng trực tiếp tới racer:
+- **Velocity**: nhân tốc độ (+/-), khoá tiến trình
+- **Transform**: override `worldMain/worldCross`, opacity (teleport/pull)
+- **Removal**: loại racer khỏi đường đua (eliminate/destroy)
+
+### 12.1 Proposed Types (concept)
+
+```ts
+// types/event-prefab.ts (concept)
+
+type TargetRef =
+  | { kind: "ABS"; x: number; y: number }
+  | { kind: "RACER"; racerId: string; dx?: number; dy?: number }
+
+interface EventPrefab {
+  prefabId: string
+  name: string
+  source: string                // spritesheet/atlas source
+  // Optional: particle/sfx hooks
+  sfxKey?: string
+  vfxKey?: string
+  // Scripted sequence (keyframe-like), can drive both render + gameplay
+  steps: Array<{
+    atFrame: number
+    // Move/attach the event sprite
+    eventSprite?: { position?: TargetRef; opacity?: number }
+    // Apply effects to one or more racers
+    racers?: Array<{
+      racerId: string
+      animState?: string        // depends on character's available states
+      velocityMultiplier?: number
+      position?: { target: TargetRef; opacity?: number } // pull/teleport/drag
+      isDestroyed?: boolean
+    }>
+  }>
+}
+
+interface EventInstance {
+  id: string
+  prefabId: string
+  startMs: number
+  durationMs: number
+  // Which racers are affected can be decided at schedule time
+  affectedRacerIds: string[]
+}
+```
+
+> Note: Đây là lớp “scriptable event”. Hệ thống `EventTypeDefinition` hiện tại (BOOST/SLOW/…) vẫn dùng được cho hiệu ứng đơn giản; Prefab/Instance dành cho event cinematic/phức tạp.
 
 ### 10.1 Built-in Event Types
 
@@ -715,7 +806,7 @@ class AnimationController {
 
 ---
 
-## 12) Camera Controller
+## 14) Camera Controller
 
 ```ts
 // rendering/camera-controller.ts
@@ -723,6 +814,7 @@ class AnimationController {
 class CameraController {
   private config: CameraConfig
   private smoothedMain = 0
+  private maxLeaderMain = 0
 
   update(
     racerStates: Record<string, RacerRuntimeState>,
@@ -731,7 +823,8 @@ class CameraController {
   ): { worldMain: number; worldCross: number } {
     if (cameraStore.mode === 'LEADER_TRACK') {
       // 1. Find leader = racer with max worldMain, not eliminated
-      // 2. Target = leader.worldMain + lookAheadPx
+      // 2. Track maxLeaderMain to prevent camera snapping backwards (e.g. leader eliminated)
+      // 3. Target = maxLeaderMain + lookAheadPx
       // 3. Clamp target so camera edge does not exceed finish + margin
       // 4. Smooth: smoothedMain += (target - smoothedMain) * (1 - e^(-6 * dt))
       // 5. Cross axis = viewport center
@@ -982,11 +1075,11 @@ Playback engine runs in Pixi ticker callback. It does NOT read from Zustand stor
 
 ---
 
-## 18) Seed Reproducibility
+## 20) Seed Reproducibility
 
-- `SeededRng` uses xoshiro128** algorithm — fast, good distribution, seedable.
+- `SeededRng` uses a deterministic arithmetic PRNG (LCG/mulberry32-inspired) to stay compatible with Ultracite rules.
 - Same seed + same racer list + same config = identical scenario.
-- Seed stored in `PrecomputedScenario` for replay/debug.
+- Seed stored in `RaceScenario` for replay/debug.
 - UI can show seed and allow manual seed input.
 
 ---

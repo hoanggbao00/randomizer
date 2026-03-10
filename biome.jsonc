@@ -9,6 +9,9 @@
     "rules": {
       "correctness": {
         "useImageSize": "off"
+      },
+      "performance": {
+        "noBarrelFile": "off"
       }
     }
   }

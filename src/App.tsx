@@ -1,35 +1,40 @@
 import "./styles.css";
+import { RaceCanvas } from "@/components/race-canvas";
+import { RaceInputForm } from "@/components/race-input-form";
+import { useGameBridge } from "@/game/hooks/use-game-bridge";
+import { usePlaybackStore } from "@/game/stores/playback-store";
 
 function App() {
-  const [count, setCount] = useState(0);
+  const bridge = useGameBridge();
+  const phase = usePlaybackStore((s) => s.phase);
+  const winnerRacerId = usePlaybackStore((s) => s.winnerRacerId);
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" rel="noopener" target="_blank">
-          <img alt="Vite logo" className="logo" src="/assets/vite.svg" />
-        </a>
-        <a href="https://react.dev" rel="noopener" target="_blank">
-          <img
-            alt="React logo"
-            className="logo react"
-            src="/assets/react.svg"
-          />
-        </a>
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
+      {/* Game Canvas — takes full remaining height */}
+      <div className="relative flex-1">
+        <RaceCanvas bridge={bridge} className="absolute inset-0" />
+
+        {/* Winner overlay */}
+        {phase === "ENDED" && winnerRacerId ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+            <div className="rounded-xl bg-background p-8 text-center shadow-2xl">
+              <p className="font-medium text-muted-foreground text-sm">
+                Winner
+              </p>
+              <h2 className="mt-1 font-bold text-4xl text-primary">
+                🏆 {winnerRacerId}
+              </h2>
+            </div>
+          </div>
+        ) : null}
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)} type="button">
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
+
+      {/* Control panel */}
+      <div className="w-full border-t bg-card shadow-lg">
+        <RaceInputForm bridge={bridge} />
       </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+    </div>
   );
 }
 
