@@ -5,6 +5,9 @@
     "ultracite/biome/react",
     ".biomelintrc-auto-import.json"
   ],
+  "files": {
+    "includes": ["!.biomelintrc-auto-import.json", "!auto-imports.d.ts"]
+  },
   "linter": {
     "rules": {
       "correctness": {
