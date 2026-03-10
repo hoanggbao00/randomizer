@@ -119,7 +119,11 @@ export class GameRuntime {
       scenario.direction,
       scenario.trackLengthPx
     );
-    this.cinematicRenderer.setup(scenario.direction, scenario.trackLengthPx);
+    this.cinematicRenderer.setup(
+      scenario.direction,
+      scenario.trackLengthPx,
+      isEventDrivenScenario(scenario) ? scenario.cinematic?.prefabs : undefined
+    );
 
     this.playbackEngine.reset();
     this.simulationEngine.reset();

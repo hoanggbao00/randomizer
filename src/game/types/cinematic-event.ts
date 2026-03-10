@@ -32,6 +32,16 @@ export interface CinematicEventPrefab {
       isDestroyed?: boolean;
     }>;
   }>;
+  /**
+   * Placeholder visual config for Phase B renderer.
+   * Real implementation will use spritesheets instead of shapes/colors.
+   */
+  visual?: {
+    color?: number;
+    shape?: "rect" | "square" | "circle";
+    width?: number;
+    height?: number;
+  };
 }
 
 export interface CinematicEventInstance {

@@ -432,6 +432,12 @@ function buildTestCinematic(input: {
   prefabs.push({
     prefabId: "TEST_POLICE_PULL",
     name: "Police Pull (test)",
+    visual: {
+      color: 0x1f_87_ff,
+      shape: "rect",
+      width: 46,
+      height: 24,
+    },
     steps: mergeStepArrays(policeSpriteSteps, policeRacerSteps),
   });
 
@@ -514,6 +520,11 @@ function buildTestCinematic(input: {
     prefabs.push({
       prefabId: "TEST_UFO_LIFT",
       name: "UFO Lift (test)",
+      visual: {
+        color: 0xbd_6b_ff,
+        shape: "circle",
+        width: 30,
+      },
       steps: ufoSteps,
     });
 

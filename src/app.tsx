@@ -6,6 +6,7 @@ import { useGameBridge } from "@/game/hooks/use-game-bridge";
 import { useDebugStore } from "@/game/stores/debug-store";
 import { usePlaybackStore } from "@/game/stores/playback-store";
 import { useRacerStore } from "@/game/stores/racer-store";
+import { useHotkey } from '@tanstack/react-hotkeys'
 
 function App() {
   const bridge = useGameBridge();
@@ -18,25 +19,11 @@ function App() {
     return found?.name ?? winnerRacerId;
   });
 
-  // Keyboard debug toggle (press "D")
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === "d" || event.key === "D") {
-        const active = document.activeElement;
-        if (
-          active &&
-          (active.tagName === "INPUT" ||
-            active.tagName === "TEXTAREA" ||
-            (active as HTMLElement).isContentEditable)
-        ) {
-          return;
-        }
-        useDebugStore.getState().toggleOverlay();
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
+  useHotkey("D", () => {
+    useDebugStore.getState().toggleOverlay();
+  }, {
+    ignoreInputs: true
+  });
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">

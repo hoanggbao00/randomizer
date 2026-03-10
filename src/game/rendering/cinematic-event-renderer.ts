@@ -1,5 +1,6 @@
 import type { Application } from "pixi.js";
 import { Container, Graphics } from "pixi.js";
+import type { CinematicEventPrefab } from "@/game/types/cinematic-event";
 import type { RaceDirection } from "@/game/types/race";
 import { createDirectionMapper } from "@/game/utils/coordinate-utils";
 
@@ -17,6 +18,8 @@ export interface CinematicSpriteFrame {
 export class CinematicEventRenderer {
   private readonly worldContainer: Container;
   private readonly nodes = new Map<string, Graphics>();
+  private visualByPrefabId: Map<string, CinematicEventPrefab["visual"]> =
+    new Map();
   private direction: RaceDirection = "LTR";
   private trackLengthPx = 0;
 
@@ -25,9 +28,19 @@ export class CinematicEventRenderer {
     app.stage.addChild(this.worldContainer);
   }
 
-  setup(direction: RaceDirection, trackLengthPx: number): void {
+  setup(
+    direction: RaceDirection,
+    trackLengthPx: number,
+    prefabs?: CinematicEventPrefab[]
+  ): void {
     this.direction = direction;
     this.trackLengthPx = trackLengthPx;
+    this.visualByPrefabId = new Map();
+    for (const prefab of prefabs ?? []) {
+      if (prefab.visual) {
+        this.visualByPrefabId.set(prefab.prefabId, prefab.visual);
+      }
+    }
     this.clearAll();
     // Reset camera offset (e.g. after a previous race).
     this.worldContainer.x = 0;
@@ -71,10 +84,26 @@ export class CinematicEventRenderer {
 
   private createNode(id: string): Graphics {
     const g = new Graphics();
-    const isUfo = id.startsWith("ufo-");
-    const color = isUfo ? 0xbd_6b_ff : 0x55_aa_ff;
-    const size = isUfo ? { w: 30, h: 30 } : { w: 40, h: 20 };
-    g.roundRect(-size.w / 2, -size.h / 2, size.w, size.h, 6);
+    const prefabId = id.split("-")[0] ?? "";
+    const visual = this.visualByPrefabId.get(prefabId);
+
+    const color = visual?.color ?? 0x55_aa_ff;
+    const shape = visual?.shape ?? "rect";
+    const width = visual?.width ?? 40;
+    const height = visual?.height ?? (shape === "square" ? width : 20);
+
+    switch (shape) {
+      case "circle": {
+        const radius = width / 2;
+        g.circle(0, 0, radius);
+        break;
+      }
+      default: {
+        const radius = 6;
+        g.roundRect(-width / 2, -height / 2, width, height, radius);
+      }
+    }
+
     g.fill(color);
     this.worldContainer.addChild(g);
     this.nodes.set(id, g);
