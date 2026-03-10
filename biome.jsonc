@@ -4,5 +4,12 @@
     "ultracite/biome/core",
     "ultracite/biome/react",
     ".biomelintrc-auto-import.json"
-  ]
+  ],
+  "linter": {
+    "rules": {
+      "correctness": {
+        "useImageSize": "off"
+      }
+    }
+  }
 }
